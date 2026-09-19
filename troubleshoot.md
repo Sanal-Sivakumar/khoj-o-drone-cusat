@@ -154,3 +154,4 @@ Reset ownership of all files in `~/pico_ws` to your host user:
 ```bash
 sudo chown -R $USER:$USER ~/pico_ws
 ```
+

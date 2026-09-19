@@ -104,6 +104,31 @@ OpenCV solves the linear system using Singular Value Decomposition (`cv2.getPers
 
 ---
 
+### Step 3: Grid Coordinate System Formulation
+
+Once the arena is warped into the canonical $900 \times 900$ pixel canvas, the physical arena is mapped into a discrete $12 \times 12$ Cartesian grid.
+
+#### 1. Mathematical Dimensions
+* **Canvas Resolution**: $900 \times 900$ pixels.
+* **Grid Resolution**: $12 \times 12$ square cells (144 total cells).
+* **Cell Pitch ($S$)**:
+  $$S = \frac{900}{12} = 75.0\text{ pixels / cell}$$
+* **Grid Lines**: 11 interior horizontal lines and 11 interior vertical lines ($11 \times 11 = 121$ line intersections).
+* **Line Coordinates**:
+  $$x_j = j \cdot 75\text{ px}, \quad y_i = i \cdot 75\text{ px} \quad \text{for } i, j \in \{0, 1, \dots, 12\}$$
+
+#### 2. Coordinate Transformations: Pixel $\leftrightarrow$ Grid Cell
+* **Forward (Pixel $(x, y) \to$ Grid Cell $(r, c)$)**:
+  $$r = \left\lfloor \frac{y}{75} \right\rfloor, \quad c = \left\lfloor \frac{x}{75} \right\rfloor \quad \text{where } r, c \in [0, 11]$$
+* **Inverse (Grid Cell $(r, c) \to$ Cell Center $(x_{\text{center}}, y_{\text{center}})$)**:
+  $$x_{\text{center}} = (c + 0.5) \times 75, \quad y_{\text{center}} = (r + 0.5) \times 75$$
+
+#### 3. Analytical Grid vs. Hough Line Detection
+* **Analytical Grid (Chosen Method)**: Leverages the homography-rectified $900 \times 900$ geometry. $O(1)$ computation, zero false detections, and immune to line occlusions (trees, black building cubes, survivor markers).
+* **Visual Verification**: Overlaying computed lines at $k \times 75$ px directly tests the sub-pixel precision of the Step 2 perspective transform.
+
+---
+
 ## 4. ROS 2 Middleware Layer
 
 ROS 2 (Robot Operating System 2) serves as the computational nervous system:
@@ -120,3 +145,5 @@ ROS 2 (Robot Operating System 2) serves as the computational nervous system:
 * **Continuous Multi-Body Dynamics**: Quadrotor inertia, motor thrust, aerodynamic drag, gravity.
 * **Contacts & Collisions**: Rigid surface interactions with debris and buildings.
 * **Sensors**: Simulated IMU (accelerometer/gyroscope), downward rangefinder, and RGB camera streams mapped directly to ROS 2 topics.
+
+
