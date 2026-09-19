@@ -130,4 +130,6 @@ python3 task1a.py --image image_1.jpg
 ## 📚 Documentation Index
 * 📖 [**Technical Details & Theory Guide (`technical_details.md`)**](./technical_details.md)
 * 🛠️ [**Troubleshooting & Bug Log (`troubleshoot.md`)**](./troubleshoot.md)
+* 🤝 [**Team Handover & AI Guide (`TEAM_HANDOVER.md`)**](./TEAM_HANDOVER.md)
+
 
