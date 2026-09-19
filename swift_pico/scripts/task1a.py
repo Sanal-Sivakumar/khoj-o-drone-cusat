@@ -17,7 +17,6 @@ class ArenaCoordinateSystem:
         self.cell_size = canvas_size / num_cells  # 75.0 px per cell
         self.num_intersections = num_cells - 1    # 11 interior lines (A-K, 1-11)
 
-        # Build bidirectional lookup table for all 121 intersections
         self.name_to_coord = {}
         self.coord_to_name = {}
 
@@ -42,46 +41,6 @@ class ArenaCoordinateSystem:
         euclidean_dist = np.hypot(x - center_x, y - center_y)
 
         return name, (center_x, center_y), euclidean_dist
-
-    def intersection_to_pixel(self, name):
-        """Returns the exact (x, y) center pixel of a given intersection name."""
-        if name not in self.name_to_coord:
-            raise ValueError(f"Invalid intersection name '{name}'. Must be between A1 and K11.")
-        return self.name_to_coord[name]
-
-    def draw_checkpoint_overlay(self, image):
-        """
-        Step 4 Checkpoint Visualizer:
-        Draws the grid lines and prints the name next to EVERY single one of the 121 intersections.
-        """
-        overlay = image.copy()
-
-        # 1. Draw subtle grid lines in green
-        for i in range(self.num_cells + 1):
-            pos = int(round(i * self.cell_size))
-            cv2.line(overlay, (pos, 0), (pos, self.canvas_size), (0, 180, 0), 1)
-            cv2.line(overlay, (0, pos), (self.canvas_size, pos), (0, 180, 0), 1)
-
-        # 2. Draw red dot and text name next to EVERY one of the 121 intersections
-        for name, (x, y) in self.name_to_coord.items():
-            ix, iy = int(round(x)), int(round(y))
-
-            # Red intersection marker
-            cv2.circle(overlay, (ix, iy), 3, (0, 0, 255), -1)
-
-            # Name label next to each intersection
-            cv2.putText(
-                overlay,
-                name,
-                (ix + 4, iy - 4),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.28,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA
-            )
-
-        return overlay
 
 
 def detect_corner_markers(image):
@@ -138,6 +97,44 @@ def straighten_arena(image, corners, ids, output_size=900):
     return warped_arena
 
 
+def find_survivor_contours(warped_image, min_area=200):
+    """
+    Step 5: Isolates red and yellow survivor regions using HSV color segmentation,
+    morphological cleanup, and contour extraction.
+    """
+    # 1. Convert to HSV color space
+    hsv = cv2.cvtColor(warped_image, cv2.COLOR_BGR2HSV)
+
+    # 2. Red color mask (wraparound: [0, 10] and [170, 180])
+    lower_red1, upper_red1 = np.array([0, 100, 100]), np.array([10, 255, 255])
+    lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([180, 255, 255])
+    mask_red = cv2.bitwise_or(
+        cv2.inRange(hsv, lower_red1, upper_red1),
+        cv2.inRange(hsv, lower_red2, upper_red2)
+    )
+
+    # 3. Yellow color mask ([18, 100, 100] to [35, 255, 255])
+    lower_yellow, upper_yellow = np.array([18, 100, 100]), np.array([35, 255, 255])
+    mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+    # 4. Morphological filtering (Close to heal grid lines, Open to remove speckle noise)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    clean_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
+    clean_red = cv2.morphologyEx(clean_red, cv2.MORPH_OPEN, kernel)
+
+    clean_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
+    clean_yellow = cv2.morphologyEx(clean_yellow, cv2.MORPH_OPEN, kernel)
+
+    # 5. Extract and area-filter contours
+    raw_red_contours, _ = cv2.findContours(clean_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    red_contours = [c for c in raw_red_contours if cv2.contourArea(c) >= min_area]
+
+    raw_yellow_contours, _ = cv2.findContours(clean_yellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    yellow_contours = [c for c in raw_yellow_contours if cv2.contourArea(c) >= min_area]
+
+    return red_contours, yellow_contours
+
+
 def main():
     parser = argparse.ArgumentParser(description="Khoj-o-Drone Task 1A Pipeline")
     parser.add_argument(
@@ -159,19 +156,28 @@ def main():
     # Step 2: Straighten arena to 900x900
     warped_arena = straighten_arena(image, corners, ids, output_size=900)
 
-    # Step 3 & 4: Coordinate system with all 121 named intersections
+    # Step 3 & 4: Coordinate system
     coord_system = ArenaCoordinateSystem(canvas_size=900, num_cells=12)
-    debug_overlay = coord_system.draw_checkpoint_overlay(warped_arena)
 
-    print(f"[CHECKPOINT 4] All {len(coord_system.name_to_coord)} intersections generated:")
-    for row in range(1, 12):
-        row_names = [f"{chr(ord('A') + c - 1)}{row}" for c in range(1, 12)]
-        print("  ".join(f"{name:>3}" for name in row_names))
+    # Step 5: Find survivors
+    red_contours, yellow_contours = find_survivor_contours(warped_arena, min_area=200)
 
-    # Visual Checkpoint Window
-    cv2.imshow("Step 4 Checkpoint - 121 Named Intersections", debug_overlay)
-    print("\nEyeball the board: A1 top-left, K11 bottom-right, letters advancing rightwards.")
-    print("Press any key on the image window to continue...")
+    total_survivors = len(red_contours) + len(yellow_contours)
+    print(f"[CHECKPOINT 5] Detection Results:")
+    print(f"  • Red Survivors:    {len(red_contours)}")
+    print(f"  • Yellow Survivors: {len(yellow_contours)}")
+    print(f"  • Total Count:      {total_survivors}")
+
+    # Checkpoint Visualizer: Draw contrasting outlines
+    debug_image = warped_arena.copy()
+    # Draw Red survivor outlines in Bright Cyan (BGR: 255, 255, 0)
+    cv2.drawContours(debug_image, red_contours, -1, (255, 255, 0), 2)
+    # Draw Yellow survivor outlines in Bright Magenta (BGR: 255, 0, 255)
+    cv2.drawContours(debug_image, yellow_contours, -1, (255, 0, 255), 2)
+
+    cv2.imshow("Step 5 Checkpoint - Survivor Contours", debug_image)
+    print("\nEyeball check: Do the drawn outlines match the real survivors with zero noise?")
+    print("Press any key to close the window...")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

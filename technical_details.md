@@ -154,6 +154,30 @@ Every intersection location is uniquely defined by:
 
 ---
 
+### Step 5: Survivor Detection via HSV Color Segmentation & Morphology
+
+In the disaster field, survivors are represented as distinct color-coded geometric shapes (Red Triangles and Yellow Circles).
+
+#### 1. HSV (Hue, Saturation, Value) Color Thresholding
+Unlike RGB where color and illumination are intertwined, HSV isolates chromaticity in the **Hue ($H$)** channel:
+* **Red Segmentation**:
+  Because red wraps around the boundaries of the circular hue wheel ($0^\circ \dots 360^\circ$), OpenCV ($H \in [0, 180]$) requires two ranges combined with bitwise OR:
+  $$\text{Mask}_{\text{Red}} = \text{inRange}\left(H \in [0, 10]\right) \lor \text{inRange}\left(H \in [170, 180]\right) \quad (S, V \ge 100)$$
+* **Yellow Segmentation**:
+  Yellow occupies a contiguous hue band:
+  $$\text{Mask}_{\text{Yellow}} = \text{inRange}\left(H \in [18, 35], S \in [100, 255], V \in [100, 255]\right)$$
+
+#### 2. Morphological Noise Filtering
+To prepare binary masks for contour extraction:
+1. **Closing (`cv2.MORPH_CLOSE`)**: Dilation followed by erosion with a $5 \times 5$ elliptical kernel. Bridges gaps in survivor silhouettes caused by intersecting white grid lines.
+2. **Opening (`cv2.MORPH_OPEN`)**: Erosion followed by dilation. Eliminates single-pixel camera noise, water glare, and spurious artifacts.
+
+#### 3. Contour Extraction & Area Rejection Filter
+* Contours extracted via `cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)`.
+* **Area Filter**: Valid survivors have surface areas $\sim 1500 \dots 3300\text{ px}^2$. Contours with $\text{Area} < 200\text{ px}^2$ are rejected as background noise.
+
+---
+
 ## 4. ROS 2 Middleware Layer
 
 ROS 2 (Robot Operating System 2) serves as the computational nervous system:
