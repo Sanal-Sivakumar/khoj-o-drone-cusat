@@ -9,7 +9,7 @@ class ArenaCoordinateSystem:
     """
     Generalized coordinate transformation engine for the 12x12 Khoj-o-Drone arena.
     Handles mathematical pixel-to-intersection and intersection-to-pixel mappings
-    for all 121 intersections (A1 to K11).
+    for all 121 intersections (A1 to K11) with boundary edge protection.
     """
     def __init__(self, canvas_size=900, num_cells=12):
         self.canvas_size = canvas_size
@@ -32,7 +32,10 @@ class ArenaCoordinateSystem:
                 self.coord_to_name[(col_idx, row_idx)] = name
 
     def pixel_to_nearest_intersection(self, x, y):
-        """Maps any (x, y) pixel location to the nearest named intersection."""
+        """
+        Maps any continuous (x, y) pixel location to the nearest named intersection
+        with safe boundary clamping.
+        """
         col_idx = int(np.clip(np.round(x / self.cell_size), 1, self.num_intersections))
         row_idx = int(np.clip(np.round(y / self.cell_size), 1, self.num_intersections))
 
@@ -129,18 +132,61 @@ def find_survivor_contours(warped_image, min_area=200):
 
 
 def extract_centroid(contour):
-    """
-    Step 6: Reduces an arbitrary 2D shape (circle/triangle) to a single center point
-    using spatial image moments (with zero-area division guard).
-    """
+    """Extracts shape centroid using spatial image moments."""
     M = cv2.moments(contour)
     if M["m00"] > 0:
         cx = float(M["m10"] / M["m00"])
         cy = float(M["m01"] / M["m00"])
     else:
-        # Fallback for degenerate contours
         cx, cy = np.mean(contour[:, 0, :], axis=0)
     return (cx, cy)
+
+
+def build_composite_debug_view(warped_arena, coord_system, red_contours, yellow_contours):
+    """
+    Step 7 Checkpoint:
+    Builds the composite image:
+    Rectified Arena + Green Grid + Survivor Outlines + Center Dots + Assigned Intersection Names
+    """
+    composite = warped_arena.copy()
+
+    # 1. Overlay Grid Lines
+    for i in range(coord_system.num_cells + 1):
+        pos = int(round(i * coord_system.cell_size))
+        cv2.line(composite, (pos, 0), (pos, coord_system.canvas_size), (0, 160, 0), 1)
+        cv2.line(composite, (0, pos), (coord_system.canvas_size, pos), (0, 160, 0), 1)
+
+    # 2. Process and draw Red Survivors (Cyan Outline + Label)
+    for c in red_contours:
+        cx, cy = extract_centroid(c)
+        name, _, _ = coord_system.pixel_to_nearest_intersection(cx, cy)
+        ix, iy = int(round(cx)), int(round(cy))
+
+        # Outline & Dot
+        cv2.drawContours(composite, [c], -1, (255, 255, 0), 2)
+        cv2.circle(composite, (ix, iy), 5, (0, 0, 0), -1)
+        cv2.circle(composite, (ix, iy), 3, (255, 255, 255), -1)
+
+        # Name text box
+        cv2.rectangle(composite, (ix + 8, iy - 22), (ix + 42, iy - 2), (0, 0, 0), -1)
+        cv2.putText(composite, name, (ix + 12, iy - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1, cv2.LINE_AA)
+
+    # 3. Process and draw Yellow Survivors (Magenta Outline + Label)
+    for c in yellow_contours:
+        cx, cy = extract_centroid(c)
+        name, _, _ = coord_system.pixel_to_nearest_intersection(cx, cy)
+        ix, iy = int(round(cx)), int(round(cy))
+
+        # Outline & Dot
+        cv2.drawContours(composite, [c], -1, (255, 0, 255), 2)
+        cv2.circle(composite, (ix, iy), 5, (0, 0, 0), -1)
+        cv2.circle(composite, (ix, iy), 3, (255, 255, 255), -1)
+
+        # Name text box
+        cv2.rectangle(composite, (ix + 8, iy - 22), (ix + 42, iy - 2), (0, 0, 0), -1)
+        cv2.putText(composite, name, (ix + 12, iy - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 255), 1, cv2.LINE_AA)
+
+    return composite
 
 
 def main():
@@ -170,37 +216,24 @@ def main():
     # Step 5: Find survivor contours
     red_contours, yellow_contours = find_survivor_contours(warped_arena, min_area=200)
 
-    # Step 6: Compute centroid points for every survivor
-    debug_image = warped_arena.copy()
-
-    print("[CHECKPOINT 6] Extracted Survivor Centroids:")
-    
-    # Process Red Survivors
-    for idx, contour in enumerate(red_contours, 1):
-        cx, cy = extract_centroid(contour)
+    # Step 6 & 7: Match centres to nearest intersections & build composite image
+    print("\n[FINAL RESULTS] Detected Survivors and Assigned Intersections:")
+    print("-" * 55)
+    for idx, c in enumerate(red_contours, 1):
+        cx, cy = extract_centroid(c)
         name, _, dist = coord_system.pixel_to_nearest_intersection(cx, cy)
-        print(f"  • Red #{idx}: Centroid=({cx:.2f}, {cy:.2f}) -> Nearest Intersection: {name} (Error: {dist:.2f}px)")
-        
-        # Checkpoint Visuals: Draw outline and a solid white dot with black border at center
-        cv2.drawContours(debug_image, [contour], -1, (255, 255, 0), 2)
-        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 5, (0, 0, 0), -1)
-        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 3, (255, 255, 255), -1)
+        print(f"  • Red Triangle #{idx}:    Location: {name:4s} (Error: {dist:.2f} px)")
 
-    # Process Yellow Survivors
-    for idx, contour in enumerate(yellow_contours, 1):
-        cx, cy = extract_centroid(contour)
+    for idx, c in enumerate(yellow_contours, 1):
+        cx, cy = extract_centroid(c)
         name, _, dist = coord_system.pixel_to_nearest_intersection(cx, cy)
-        print(f"  • Yellow #{idx}: Centroid=({cx:.2f}, {cy:.2f}) -> Nearest Intersection: {name} (Error: {dist:.2f}px)")
-        
-        # Checkpoint Visuals: Draw outline and a solid white dot with black border at center
-        cv2.drawContours(debug_image, [contour], -1, (255, 0, 255), 2)
-        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 5, (0, 0, 0), -1)
-        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 3, (255, 255, 255), -1)
+        print(f"  • Yellow Circle #{idx}:   Location: {name:4s} (Error: {dist:.2f} px)")
+    print("-" * 55)
 
-    # Visual Checkpoint Window
-    cv2.imshow("Step 6 Checkpoint - Survivor Centroids", debug_image)
-    print("\nEyeball check: Does every dot sit squarely inside its own marker?")
-    print("Press any key on the image window to close...")
+    # Step 7 Checkpoint Visualizer
+    composite_image = build_composite_debug_view(warped_arena, coord_system, red_contours, yellow_contours)
+    cv2.imshow("Step 7 Checkpoint - Composite Survivor Map", composite_image)
+    print("\nDisplaying composite debug map. Press any key on the image window to close...")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

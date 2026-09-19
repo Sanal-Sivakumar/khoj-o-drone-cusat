@@ -200,6 +200,29 @@ $$M_{pq} = \iint_{R} x^p y^q \, dx \, dy$$
 
 ---
 
+### Step 7: Nearest Intersection Snapping & Composite Visualization
+
+Centroids land with sub-pixel variations due to camera perspective and physical placement. Step 7 maps each continuous centroid $(\bar{x}, \bar{y})$ to its nearest discrete physical line intersection.
+
+#### 1. Nearest Intersection Mapping
+Given grid cell size $S = 75.0\text{ px}$:
+$$j = \text{clip}\left(\text{int}\left(\text{round}\left(\frac{\bar{x}}{S}\right)\right), 1, 11\right), \quad i = \text{clip}\left(\text{int}\left(\text{round}\left(\frac{\bar{y}}{S}\right)\right), 1, 11\right)$$
+$$\text{Assigned Name} = \text{chr}\big(\text{ord}('A') + j - 1\big) + \text{str}(i)$$
+
+#### 2. Boundary Safety Guards
+* If a centroid falls closer to the arena edge than to an interior line, `np.clip(..., 1, 11)` guarantees coordinates never exceed the valid $A \dots K$ and $1 \dots 11$ ranges.
+* Prevents invalid string formatting (e.g., `@0` or `L12`) and bounds exceptions.
+
+#### 3. Composite Debug Visualization
+A multi-layer composite image provides complete visual verification:
+1. **Layer 1**: Rectified $900 \times 900$ arena base image.
+2. **Layer 2**: $12 \times 12$ analytical green grid lines ($75\text{ px}$ spacing).
+3. **Layer 3**: Survivor contour silhouettes (Cyan for red triangles, Magenta for yellow circles).
+4. **Layer 4**: Spatial moment centroid center dots.
+5. **Layer 5**: Bold intersection text labels beside each survivor.
+
+---
+
 ## 4. ROS 2 Middleware Layer
 
 ROS 2 (Robot Operating System 2) serves as the computational nervous system:
