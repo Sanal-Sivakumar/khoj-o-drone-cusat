@@ -129,6 +129,31 @@ Once the arena is warped into the canonical $900 \times 900$ pixel canvas, the p
 
 ---
 
+### Step 4: Intersection Coordinate System & Naming Convention
+
+Survivors and disaster landmarks in Khoj-o-Drone stand **on the intersections of grid lines**, rather than inside grid cells.
+
+#### 1. Naming Standard
+Every intersection location is uniquely defined by:
+* **Column Letter**: `A` to `K` (corresponding to column line indices $j = 1 \dots 11$, from left to right).
+* **Row Number**: `1` to `11` (corresponding to row line indices $i = 1 \dots 11$, from top to bottom).
+* **Format**: Pure alphanumeric concatenation with **no spaces, separators, or zero-padding** (e.g. `A1`, `C2`, `K11`).
+* **Bounds**:
+  * Top-Left intersection: `A1` at $(75, 75)\text{ px}$
+  * Bottom-Right intersection: `K11` at $(825, 825)\text{ px}$
+  * Total Intersection Count: $11 \times 11 = 121$
+
+#### 2. Intersection Engine (`ArenaCoordinateSystem`)
+* **Continuous Pixel-to-Intersection Mapping**:
+  Given any pixel coordinate $(x, y)$ from a detected survivor centroid:
+  $$j = \text{clip}\left(\text{round}\left(\frac{x}{75}\right), 1, 11\right), \quad i = \text{clip}\left(\text{round}\left(\frac{y}{75}\right), 1, 11\right)$$
+  $$\text{Name} = \text{chr}(65 + j - 1) + \text{str}(i)$$
+* **Euclidean Quantization Error**:
+  $$e = \sqrt{(x - j \times 75)^2 + (y - i \times 75)^2}$$
+  Allows evaluating if a detected centroid is closely aligned with a physical line intersection ($e \le 15\text{ px}$).
+
+---
+
 ## 4. ROS 2 Middleware Layer
 
 ROS 2 (Robot Operating System 2) serves as the computational nervous system:

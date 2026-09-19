@@ -5,6 +5,85 @@ import cv2
 import numpy as np
 
 
+class ArenaCoordinateSystem:
+    """
+    Generalized coordinate transformation engine for the 12x12 Khoj-o-Drone arena.
+    Handles mathematical pixel-to-intersection and intersection-to-pixel mappings
+    for all 121 intersections (A1 to K11).
+    """
+    def __init__(self, canvas_size=900, num_cells=12):
+        self.canvas_size = canvas_size
+        self.num_cells = num_cells
+        self.cell_size = canvas_size / num_cells  # 75.0 px per cell
+        self.num_intersections = num_cells - 1    # 11 interior lines (A-K, 1-11)
+
+        # Build bidirectional lookup table for all 121 intersections
+        self.name_to_coord = {}
+        self.coord_to_name = {}
+
+        for col_idx in range(1, num_cells):  # 1 to 11 -> A to K
+            col_letter = chr(ord('A') + col_idx - 1)
+            x_px = col_idx * self.cell_size
+
+            for row_idx in range(1, num_cells):  # 1 to 11 -> 1 to 11
+                name = f"{col_letter}{row_idx}"
+                y_px = row_idx * self.cell_size
+
+                self.name_to_coord[name] = (x_px, y_px)
+                self.coord_to_name[(col_idx, row_idx)] = name
+
+    def pixel_to_nearest_intersection(self, x, y):
+        """Maps any (x, y) pixel location to the nearest named intersection."""
+        col_idx = int(np.clip(np.round(x / self.cell_size), 1, self.num_intersections))
+        row_idx = int(np.clip(np.round(y / self.cell_size), 1, self.num_intersections))
+
+        name = self.coord_to_name[(col_idx, row_idx)]
+        center_x, center_y = self.name_to_coord[name]
+        euclidean_dist = np.hypot(x - center_x, y - center_y)
+
+        return name, (center_x, center_y), euclidean_dist
+
+    def intersection_to_pixel(self, name):
+        """Returns the exact (x, y) center pixel of a given intersection name."""
+        if name not in self.name_to_coord:
+            raise ValueError(f"Invalid intersection name '{name}'. Must be between A1 and K11.")
+        return self.name_to_coord[name]
+
+    def draw_checkpoint_overlay(self, image):
+        """
+        Step 4 Checkpoint Visualizer:
+        Draws the grid lines and prints the name next to EVERY single one of the 121 intersections.
+        """
+        overlay = image.copy()
+
+        # 1. Draw subtle grid lines in green
+        for i in range(self.num_cells + 1):
+            pos = int(round(i * self.cell_size))
+            cv2.line(overlay, (pos, 0), (pos, self.canvas_size), (0, 180, 0), 1)
+            cv2.line(overlay, (0, pos), (self.canvas_size, pos), (0, 180, 0), 1)
+
+        # 2. Draw red dot and text name next to EVERY one of the 121 intersections
+        for name, (x, y) in self.name_to_coord.items():
+            ix, iy = int(round(x)), int(round(y))
+
+            # Red intersection marker
+            cv2.circle(overlay, (ix, iy), 3, (0, 0, 255), -1)
+
+            # Name label next to each intersection
+            cv2.putText(
+                overlay,
+                name,
+                (ix + 4, iy - 4),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.28,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA
+            )
+
+        return overlay
+
+
 def detect_corner_markers(image):
     """Detects ArUco markers (DICT_4X4_250) and validates IDs 80, 85, 90, 95."""
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
@@ -14,9 +93,7 @@ def detect_corner_markers(image):
         detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
         corners, ids, _ = detector.detectMarkers(image)
     else:
-        corners, ids, _ = cv2.aruco.detectMarkers(
-            image, aruco_dict, parameters=parameters
-        )
+        corners, ids, _ = cv2.aruco.detectMarkers(image, aruco_dict, parameters=parameters)
 
     if ids is None or len(ids) == 0:
         print("[ERROR] No ArUco markers detected in the image.")
@@ -32,15 +109,9 @@ def detect_corner_markers(image):
     return corners, ids
 
 
-def straighten_arena(image, corners, ids):
-    """
-    Performs perspective transform using the inner corners of markers 80, 85, 90, 95
-    to produce a square top-down 900x900 image of the playing field.
-    """
-    marker_dict = {}
-    for marker_id, corner in zip(ids.flatten(), corners):
-        marker_dict[marker_id] = corner[0]
-
+def straighten_arena(image, corners, ids, output_size=900):
+    """Performs perspective transform using the inner corners of markers 80, 85, 90, 95."""
+    marker_dict = {mid: corner[0] for mid, corner in zip(ids.flatten(), corners)}
     centers = [np.mean(marker_dict[mid], axis=0) for mid in [80, 85, 90, 95]]
     arena_center = np.mean(centers, axis=0)
 
@@ -56,38 +127,15 @@ def straighten_arena(image, corners, ids):
     src_pts = np.array([tl, tr, br, bl], dtype=np.float32)
     dst_pts = np.array([
         [0, 0],
-        [900, 0],
-        [900, 900],
-        [0, 900]
+        [output_size, 0],
+        [output_size, output_size],
+        [0, output_size]
     ], dtype=np.float32)
 
     matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
-    warped_arena = cv2.warpPerspective(image, matrix, (900, 900))
+    warped_arena = cv2.warpPerspective(image, matrix, (output_size, output_size))
 
     return warped_arena
-
-
-def draw_grid_lines(image, num_cells=12, color=(0, 255, 0), thickness=1):
-    """
-    Overlays a computed num_cells x num_cells coordinate grid in bright green (BGR: 0, 255, 0)
-    over the 900x900 rectified arena.
-    """
-    grid_overlay = image.copy()
-    height, width = image.shape[:2]
-    cell_w = width / num_cells
-    cell_h = height / num_cells
-
-    # Draw vertical and horizontal lines
-    for i in range(num_cells + 1):
-        x = int(round(i * cell_w))
-        y = int(round(i * cell_h))
-
-        # Vertical grid line
-        cv2.line(grid_overlay, (x, 0), (x, height), color, thickness)
-        # Horizontal grid line
-        cv2.line(grid_overlay, (0, y), (width, y), color, thickness)
-
-    return grid_overlay
 
 
 def main():
@@ -108,17 +156,22 @@ def main():
     # Step 1: Detect corner markers
     corners, ids = detect_corner_markers(image)
 
-    # Step 2: Straighten the arena to 900x900
-    warped_arena = straighten_arena(image, corners, ids)
-    print(f"[CHECKPOINT 2 PASSED] Warped arena shape: {warped_arena.shape}")
+    # Step 2: Straighten arena to 900x900
+    warped_arena = straighten_arena(image, corners, ids, output_size=900)
 
-    # Step 3: Compute & overlay grid lines (12x12 grid, 75px per cell)
-    grid_image = draw_grid_lines(warped_arena, num_cells=12, color=(0, 255, 0), thickness=1)
-    print(f"[CHECKPOINT 3 PASSED] 12x12 Grid generated (Cell size: {900/12}px).")
+    # Step 3 & 4: Coordinate system with all 121 named intersections
+    coord_system = ArenaCoordinateSystem(canvas_size=900, num_cells=12)
+    debug_overlay = coord_system.draw_checkpoint_overlay(warped_arena)
 
-    # Visual Checkpoint: Display the green grid overlay
-    cv2.imshow("Step 3 - Computed 12x12 Grid Overlay", grid_image)
-    print("Displaying Step 3 result. Press any key on the image window to continue...")
+    print(f"[CHECKPOINT 4] All {len(coord_system.name_to_coord)} intersections generated:")
+    for row in range(1, 12):
+        row_names = [f"{chr(ord('A') + c - 1)}{row}" for c in range(1, 12)]
+        print("  ".join(f"{name:>3}" for name in row_names))
+
+    # Visual Checkpoint Window
+    cv2.imshow("Step 4 Checkpoint - 121 Named Intersections", debug_overlay)
+    print("\nEyeball the board: A1 top-left, K11 bottom-right, letters advancing rightwards.")
+    print("Press any key on the image window to continue...")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
