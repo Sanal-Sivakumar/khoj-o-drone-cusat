@@ -137,3 +137,4 @@ Khoj-o-Drone is an autonomous disaster-response drone system. A drone surveys an
 6. Write production-grade, generalized, headless code (no hardcoded test image names, no blocking GUI calls during evaluation).
 7. Guide step-by-step, verifying checkpoints visually and quantitatively before proceeding.
 ```
+
