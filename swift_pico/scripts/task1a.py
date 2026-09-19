@@ -98,14 +98,10 @@ def straighten_arena(image, corners, ids, output_size=900):
 
 
 def find_survivor_contours(warped_image, min_area=200):
-    """
-    Step 5: Isolates red and yellow survivor regions using HSV color segmentation,
-    morphological cleanup, and contour extraction.
-    """
-    # 1. Convert to HSV color space
+    """Isolates red and yellow survivor regions using HSV segmentation and morphology."""
     hsv = cv2.cvtColor(warped_image, cv2.COLOR_BGR2HSV)
 
-    # 2. Red color mask (wraparound: [0, 10] and [170, 180])
+    # Red mask (wraparound)
     lower_red1, upper_red1 = np.array([0, 100, 100]), np.array([10, 255, 255])
     lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([180, 255, 255])
     mask_red = cv2.bitwise_or(
@@ -113,26 +109,38 @@ def find_survivor_contours(warped_image, min_area=200):
         cv2.inRange(hsv, lower_red2, upper_red2)
     )
 
-    # 3. Yellow color mask ([18, 100, 100] to [35, 255, 255])
+    # Yellow mask
     lower_yellow, upper_yellow = np.array([18, 100, 100]), np.array([35, 255, 255])
     mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
-    # 4. Morphological filtering (Close to heal grid lines, Open to remove speckle noise)
+    # Morphological cleanup
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    clean_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
-    clean_red = cv2.morphologyEx(clean_red, cv2.MORPH_OPEN, kernel)
+    clean_red = cv2.morphologyEx(cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel), cv2.MORPH_OPEN, kernel)
+    clean_yellow = cv2.morphologyEx(cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel), cv2.MORPH_OPEN, kernel)
 
-    clean_yellow = cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel)
-    clean_yellow = cv2.morphologyEx(clean_yellow, cv2.MORPH_OPEN, kernel)
+    # Contours
+    raw_red, _ = cv2.findContours(clean_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    red_contours = [c for c in raw_red if cv2.contourArea(c) >= min_area]
 
-    # 5. Extract and area-filter contours
-    raw_red_contours, _ = cv2.findContours(clean_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    red_contours = [c for c in raw_red_contours if cv2.contourArea(c) >= min_area]
-
-    raw_yellow_contours, _ = cv2.findContours(clean_yellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    yellow_contours = [c for c in raw_yellow_contours if cv2.contourArea(c) >= min_area]
+    raw_yellow, _ = cv2.findContours(clean_yellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    yellow_contours = [c for c in raw_yellow if cv2.contourArea(c) >= min_area]
 
     return red_contours, yellow_contours
+
+
+def extract_centroid(contour):
+    """
+    Step 6: Reduces an arbitrary 2D shape (circle/triangle) to a single center point
+    using spatial image moments (with zero-area division guard).
+    """
+    M = cv2.moments(contour)
+    if M["m00"] > 0:
+        cx = float(M["m10"] / M["m00"])
+        cy = float(M["m01"] / M["m00"])
+    else:
+        # Fallback for degenerate contours
+        cx, cy = np.mean(contour[:, 0, :], axis=0)
+    return (cx, cy)
 
 
 def main():
@@ -159,25 +167,40 @@ def main():
     # Step 3 & 4: Coordinate system
     coord_system = ArenaCoordinateSystem(canvas_size=900, num_cells=12)
 
-    # Step 5: Find survivors
+    # Step 5: Find survivor contours
     red_contours, yellow_contours = find_survivor_contours(warped_arena, min_area=200)
 
-    total_survivors = len(red_contours) + len(yellow_contours)
-    print(f"[CHECKPOINT 5] Detection Results:")
-    print(f"  • Red Survivors:    {len(red_contours)}")
-    print(f"  • Yellow Survivors: {len(yellow_contours)}")
-    print(f"  • Total Count:      {total_survivors}")
-
-    # Checkpoint Visualizer: Draw contrasting outlines
+    # Step 6: Compute centroid points for every survivor
     debug_image = warped_arena.copy()
-    # Draw Red survivor outlines in Bright Cyan (BGR: 255, 255, 0)
-    cv2.drawContours(debug_image, red_contours, -1, (255, 255, 0), 2)
-    # Draw Yellow survivor outlines in Bright Magenta (BGR: 255, 0, 255)
-    cv2.drawContours(debug_image, yellow_contours, -1, (255, 0, 255), 2)
 
-    cv2.imshow("Step 5 Checkpoint - Survivor Contours", debug_image)
-    print("\nEyeball check: Do the drawn outlines match the real survivors with zero noise?")
-    print("Press any key to close the window...")
+    print("[CHECKPOINT 6] Extracted Survivor Centroids:")
+    
+    # Process Red Survivors
+    for idx, contour in enumerate(red_contours, 1):
+        cx, cy = extract_centroid(contour)
+        name, _, dist = coord_system.pixel_to_nearest_intersection(cx, cy)
+        print(f"  • Red #{idx}: Centroid=({cx:.2f}, {cy:.2f}) -> Nearest Intersection: {name} (Error: {dist:.2f}px)")
+        
+        # Checkpoint Visuals: Draw outline and a solid white dot with black border at center
+        cv2.drawContours(debug_image, [contour], -1, (255, 255, 0), 2)
+        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 5, (0, 0, 0), -1)
+        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 3, (255, 255, 255), -1)
+
+    # Process Yellow Survivors
+    for idx, contour in enumerate(yellow_contours, 1):
+        cx, cy = extract_centroid(contour)
+        name, _, dist = coord_system.pixel_to_nearest_intersection(cx, cy)
+        print(f"  • Yellow #{idx}: Centroid=({cx:.2f}, {cy:.2f}) -> Nearest Intersection: {name} (Error: {dist:.2f}px)")
+        
+        # Checkpoint Visuals: Draw outline and a solid white dot with black border at center
+        cv2.drawContours(debug_image, [contour], -1, (255, 0, 255), 2)
+        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 5, (0, 0, 0), -1)
+        cv2.circle(debug_image, (int(round(cx)), int(round(cy))), 3, (255, 255, 255), -1)
+
+    # Visual Checkpoint Window
+    cv2.imshow("Step 6 Checkpoint - Survivor Centroids", debug_image)
+    print("\nEyeball check: Does every dot sit squarely inside its own marker?")
+    print("Press any key on the image window to close...")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

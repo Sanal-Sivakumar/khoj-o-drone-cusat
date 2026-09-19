@@ -178,6 +178,28 @@ To prepare binary masks for contour extraction:
 
 ---
 
+### Step 6: Centroid Point Reduction via Spatial Image Moments
+
+Survivors occupy clusters of pixels, but mission planning requires a single point localization $(\bar{x}, \bar{y})$ for each survivor.
+
+#### 1. Green's Theorem & Spatial Moments
+For any 2D region bounded by contour $C$, the $(p+q)^{\text{th}}$ raw spatial moment is defined as:
+$$M_{pq} = \iint_{R} x^p y^q \, dx \, dy$$
+
+* **Zeroth Moment (Mass / Area)**:
+  $$M_{00} = \iint_{R} dx \, dy = \text{Contour Area}$$
+* **First Order Moments (Center of Mass)**:
+  $$M_{10} = \iint_{R} x \, dx \, dy, \qquad M_{01} = \iint_{R} y \, dx \, dy$$
+* **Centroid Coordinates**:
+  $$\bar{x} = \frac{M_{10}}{M_{00}}, \qquad \bar{y} = \frac{M_{01}}{M_{00}}$$
+
+#### 2. Universal Shape Invariance & Numerical Stability
+* **Shape Invariant**: The centroid calculation applies identically to both **circular markers** (geometric center) and **triangular markers** (geometric centroid/center of gravity).
+* **Degeneracy Protection**: If $M_{00} = 0$, the algorithm falls back to the polygon vertex average:
+  $$(\bar{x}, \bar{y}) = \frac{1}{N}\sum_{k=1}^{N} P_k$$
+
+---
+
 ## 4. ROS 2 Middleware Layer
 
 ROS 2 (Robot Operating System 2) serves as the computational nervous system:
