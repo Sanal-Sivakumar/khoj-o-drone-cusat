@@ -223,6 +223,35 @@ A multi-layer composite image provides complete visual verification:
 
 ---
 
+### Step 8: Standardized Output File Generation
+
+For competition evaluation and inter-subsystem data handoff, results are written directly to a structured text file in the same directory as the input image.
+
+#### 1. File Path Resolution
+* **Rule**: Strip input extension and append `_results.txt` in the same folder.
+* **Implementation**: `os.path.splitext(image_path)[0] + "_results.txt"`
+  * Example: `image_1.jpg` $\to$ `image_1_results.txt`
+  * Example: `images/test_arena.png` $\to$ `images/test_arena_results.txt`
+
+#### 2. Survivor Category Mapping
+* **Red Shapes (Triangles)** $\to$ `Critical Survivors`
+* **Yellow Shapes (Circles)** $\to$ `Stable Survivors`
+
+#### 3. Strict Formatting Rules
+```text
+Detected marker IDs: [85, 90, 95, 80]
+
+Critical Survivors: B7, C10, I2
+Stable Survivors: D2, E9, H6
+```
+* **Line 1**: Literal `Detected marker IDs:` followed by integer ID list in square brackets.
+* **Line 2**: Empty line.
+* **Line 3**: Literal `Critical Survivors:` followed by comma-space separated intersection names.
+* **Line 4**: Literal `Stable Survivors:` followed by comma-space separated intersection names.
+* **Evaluation Invariance**: Evaluator checks mathematical set equality of survivor names and marker IDs.
+
+---
+
 ## 4. ROS 2 Middleware Layer
 
 ROS 2 (Robot Operating System 2) serves as the computational nervous system:

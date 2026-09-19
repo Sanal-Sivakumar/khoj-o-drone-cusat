@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
+"""
+Khoj-o-Drone (KD) — Task 1A: Survivor Detection and Localization
+e-Yantra Robotics Competition (eYRC 2026–27)
+
+Authors: Sanal Sivakumar & Team
+"""
+
 import argparse
+import os
 import sys
 import cv2
 import numpy as np
@@ -7,9 +15,8 @@ import numpy as np
 
 class ArenaCoordinateSystem:
     """
-    Generalized coordinate transformation engine for the 12x12 Khoj-o-Drone arena.
-    Handles mathematical pixel-to-intersection and intersection-to-pixel mappings
-    for all 121 intersections (A1 to K11) with boundary edge protection.
+    Coordinate transformation engine for the 12x12 Khoj-o-Drone arena.
+    Handles mathematical pixel-to-intersection mappings for all 121 intersections (A1 to K11).
     """
     def __init__(self, canvas_size=900, num_cells=12):
         self.canvas_size = canvas_size
@@ -33,8 +40,8 @@ class ArenaCoordinateSystem:
 
     def pixel_to_nearest_intersection(self, x, y):
         """
-        Maps any continuous (x, y) pixel location to the nearest named intersection
-        with safe boundary clamping.
+        Maps continuous (x, y) pixel location on the rectified canvas
+        to the nearest named arena intersection with boundary safety clamping.
         """
         col_idx = int(np.clip(np.round(x / self.cell_size), 1, self.num_intersections))
         row_idx = int(np.clip(np.round(y / self.cell_size), 1, self.num_intersections))
@@ -47,7 +54,9 @@ class ArenaCoordinateSystem:
 
 
 def detect_corner_markers(image):
-    """Detects ArUco markers (DICT_4X4_250) and validates IDs 80, 85, 90, 95."""
+    """
+    Detects ArUco markers (DICT_4X4_250) and validates that IDs 80, 85, 90, 95 exist.
+    """
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     parameters = cv2.aruco.DetectorParameters()
 
@@ -58,22 +67,25 @@ def detect_corner_markers(image):
         corners, ids, _ = cv2.aruco.detectMarkers(image, aruco_dict, parameters=parameters)
 
     if ids is None or len(ids) == 0:
-        print("[ERROR] No ArUco markers detected in the image.")
+        print("[ERROR] No ArUco markers detected in the image.", file=sys.stderr)
         sys.exit(1)
 
-    detected_ids = ids.flatten().tolist()
+    detected_ids = [int(x) for x in ids.flatten()]
     required_ids = {80, 85, 90, 95}
     missing_ids = required_ids - set(detected_ids)
     if missing_ids:
-        print(f"[ERROR] Missing required marker IDs: {missing_ids}. Cannot continue!")
+        print(f"[ERROR] Missing required marker IDs: {missing_ids}.", file=sys.stderr)
         sys.exit(1)
 
-    return corners, ids
+    return corners, ids, detected_ids
 
 
 def straighten_arena(image, corners, ids, output_size=900):
-    """Performs perspective transform using the inner corners of markers 80, 85, 90, 95."""
-    marker_dict = {mid: corner[0] for mid, corner in zip(ids.flatten(), corners)}
+    """
+    Performs perspective transform using the inner corners of markers 80, 85, 90, 95
+    to produce a square top-down 900x900 canvas of the playing field.
+    """
+    marker_dict = {int(mid): corner[0] for mid, corner in zip(ids.flatten(), corners)}
     centers = [np.mean(marker_dict[mid], axis=0) for mid in [80, 85, 90, 95]]
     arena_center = np.mean(centers, axis=0)
 
@@ -81,10 +93,10 @@ def straighten_arena(image, corners, ids, output_size=900):
         dists = [np.linalg.norm(pt - center) for pt in pts]
         return pts[np.argmin(dists)]
 
-    tl = get_inner_corner(marker_dict[80], arena_center)
-    tr = get_inner_corner(marker_dict[85], arena_center)
-    br = get_inner_corner(marker_dict[90], arena_center)
-    bl = get_inner_corner(marker_dict[95], arena_center)
+    tl = get_inner_corner(marker_dict[80], arena_center)  # Marker 80 -> Top-Left
+    tr = get_inner_corner(marker_dict[85], arena_center)  # Marker 85 -> Top-Right
+    br = get_inner_corner(marker_dict[90], arena_center)  # Marker 90 -> Bottom-Right
+    bl = get_inner_corner(marker_dict[95], arena_center)  # Marker 95 -> Bottom-Left
 
     src_pts = np.array([tl, tr, br, bl], dtype=np.float32)
     dst_pts = np.array([
@@ -101,10 +113,13 @@ def straighten_arena(image, corners, ids, output_size=900):
 
 
 def find_survivor_contours(warped_image, min_area=200):
-    """Isolates red and yellow survivor regions using HSV segmentation and morphology."""
+    """
+    Isolates red and yellow survivor regions using HSV color segmentation,
+    morphological cleanup, and contour extraction.
+    """
     hsv = cv2.cvtColor(warped_image, cv2.COLOR_BGR2HSV)
 
-    # Red mask (wraparound)
+    # 1. Red color mask (wraparound: [0, 10] and [170, 180])
     lower_red1, upper_red1 = np.array([0, 100, 100]), np.array([10, 255, 255])
     lower_red2, upper_red2 = np.array([170, 100, 100]), np.array([180, 255, 255])
     mask_red = cv2.bitwise_or(
@@ -112,16 +127,16 @@ def find_survivor_contours(warped_image, min_area=200):
         cv2.inRange(hsv, lower_red2, upper_red2)
     )
 
-    # Yellow mask
+    # 2. Yellow color mask ([18, 100, 100] to [35, 255, 255])
     lower_yellow, upper_yellow = np.array([18, 100, 100]), np.array([35, 255, 255])
     mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
 
-    # Morphological cleanup
+    # 3. Morphological filtering
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     clean_red = cv2.morphologyEx(cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel), cv2.MORPH_OPEN, kernel)
     clean_yellow = cv2.morphologyEx(cv2.morphologyEx(mask_yellow, cv2.MORPH_CLOSE, kernel), cv2.MORPH_OPEN, kernel)
 
-    # Contours
+    # 4. Extract and filter contours
     raw_red, _ = cv2.findContours(clean_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     red_contours = [c for c in raw_red if cv2.contourArea(c) >= min_area]
 
@@ -132,7 +147,9 @@ def find_survivor_contours(warped_image, min_area=200):
 
 
 def extract_centroid(contour):
-    """Extracts shape centroid using spatial image moments."""
+    """
+    Reduces shape contour to a single centroid point using spatial image moments.
+    """
     M = cv2.moments(contour)
     if M["m00"] > 0:
         cx = float(M["m10"] / M["m00"])
@@ -142,51 +159,24 @@ def extract_centroid(contour):
     return (cx, cy)
 
 
-def build_composite_debug_view(warped_arena, coord_system, red_contours, yellow_contours):
+def write_results_file(image_path, detected_ids, critical_survivors, stable_survivors):
     """
-    Step 7 Checkpoint:
-    Builds the composite image:
-    Rectified Arena + Green Grid + Survivor Outlines + Center Dots + Assigned Intersection Names
+    Writes the exact formatted results to <image_name>_results.txt in the same directory.
     """
-    composite = warped_arena.copy()
+    output_path = os.path.splitext(image_path)[0] + "_results.txt"
 
-    # 1. Overlay Grid Lines
-    for i in range(coord_system.num_cells + 1):
-        pos = int(round(i * coord_system.cell_size))
-        cv2.line(composite, (pos, 0), (pos, coord_system.canvas_size), (0, 160, 0), 1)
-        cv2.line(composite, (0, pos), (coord_system.canvas_size, pos), (0, 160, 0), 1)
+    lines = [
+        f"Detected marker IDs: {detected_ids}",
+        "",
+        f"Critical Survivors: {', '.join(critical_survivors)}",
+        f"Stable Survivors: {', '.join(stable_survivors)}"
+    ]
+    content = "\n".join(lines) + "\n"
 
-    # 2. Process and draw Red Survivors (Cyan Outline + Label)
-    for c in red_contours:
-        cx, cy = extract_centroid(c)
-        name, _, _ = coord_system.pixel_to_nearest_intersection(cx, cy)
-        ix, iy = int(round(cx)), int(round(cy))
+    with open(output_path, "w") as f:
+        f.write(content)
 
-        # Outline & Dot
-        cv2.drawContours(composite, [c], -1, (255, 255, 0), 2)
-        cv2.circle(composite, (ix, iy), 5, (0, 0, 0), -1)
-        cv2.circle(composite, (ix, iy), 3, (255, 255, 255), -1)
-
-        # Name text box
-        cv2.rectangle(composite, (ix + 8, iy - 22), (ix + 42, iy - 2), (0, 0, 0), -1)
-        cv2.putText(composite, name, (ix + 12, iy - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 0), 1, cv2.LINE_AA)
-
-    # 3. Process and draw Yellow Survivors (Magenta Outline + Label)
-    for c in yellow_contours:
-        cx, cy = extract_centroid(c)
-        name, _, _ = coord_system.pixel_to_nearest_intersection(cx, cy)
-        ix, iy = int(round(cx)), int(round(cy))
-
-        # Outline & Dot
-        cv2.drawContours(composite, [c], -1, (255, 0, 255), 2)
-        cv2.circle(composite, (ix, iy), 5, (0, 0, 0), -1)
-        cv2.circle(composite, (ix, iy), 3, (255, 255, 255), -1)
-
-        # Name text box
-        cv2.rectangle(composite, (ix + 8, iy - 22), (ix + 42, iy - 2), (0, 0, 0), -1)
-        cv2.putText(composite, name, (ix + 12, iy - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 255), 1, cv2.LINE_AA)
-
-    return composite
+    return output_path
 
 
 def main():
@@ -194,18 +184,29 @@ def main():
     parser.add_argument(
         "--image",
         type=str,
-        default="image_1.jpg",
+        required=True,
         help="Path to input disaster image",
+    )
+    parser.add_argument(
+        "--display",
+        action="store_true",
+        default=False,
+        help="Show visual composite window (development only; defaults to False for evaluation)",
     )
     args = parser.parse_args()
 
+    # 1. Fail loudly if image cannot be read
+    if not os.path.exists(args.image):
+        print(f"[ERROR] Image file does not exist at: {args.image}", file=sys.stderr)
+        sys.exit(1)
+
     image = cv2.imread(args.image)
     if image is None:
-        print(f"[ERROR] Could not read image at: {args.image}")
+        print(f"[ERROR] Could not read image at: {args.image}", file=sys.stderr)
         sys.exit(1)
 
     # Step 1: Detect corner markers
-    corners, ids = detect_corner_markers(image)
+    corners, ids, detected_ids = detect_corner_markers(image)
 
     # Step 2: Straighten arena to 900x900
     warped_arena = straighten_arena(image, corners, ids, output_size=900)
@@ -216,26 +217,38 @@ def main():
     # Step 5: Find survivor contours
     red_contours, yellow_contours = find_survivor_contours(warped_arena, min_area=200)
 
-    # Step 6 & 7: Match centres to nearest intersections & build composite image
-    print("\n[FINAL RESULTS] Detected Survivors and Assigned Intersections:")
-    print("-" * 55)
-    for idx, c in enumerate(red_contours, 1):
+    # Step 6 & 7: Extract centroids and snap to nearest intersections
+    critical_survivors = []
+    for c in red_contours:
         cx, cy = extract_centroid(c)
-        name, _, dist = coord_system.pixel_to_nearest_intersection(cx, cy)
-        print(f"  • Red Triangle #{idx}:    Location: {name:4s} (Error: {dist:.2f} px)")
+        name, _, _ = coord_system.pixel_to_nearest_intersection(cx, cy)
+        critical_survivors.append(name)
 
-    for idx, c in enumerate(yellow_contours, 1):
+    stable_survivors = []
+    for c in yellow_contours:
         cx, cy = extract_centroid(c)
-        name, _, dist = coord_system.pixel_to_nearest_intersection(cx, cy)
-        print(f"  • Yellow Circle #{idx}:   Location: {name:4s} (Error: {dist:.2f} px)")
-    print("-" * 55)
+        name, _, _ = coord_system.pixel_to_nearest_intersection(cx, cy)
+        stable_survivors.append(name)
 
-    # Step 7 Checkpoint Visualizer
-    composite_image = build_composite_debug_view(warped_arena, coord_system, red_contours, yellow_contours)
-    cv2.imshow("Step 7 Checkpoint - Composite Survivor Map", composite_image)
-    print("\nDisplaying composite debug map. Press any key on the image window to close...")
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    # Sort for deterministic output
+    critical_survivors.sort()
+    stable_survivors.sort()
+
+    # Write output file
+    results_path = write_results_file(args.image, detected_ids, critical_survivors, stable_survivors)
+    print(f"[SUCCESS] Pipeline executed successfully. Results written to: {results_path}")
+
+    # Optional development display
+    if args.display:
+        from task1a import build_composite_debug_view
+        composite = warped_arena.copy()
+        for c in red_contours:
+            cv2.drawContours(composite, [c], -1, (255, 255, 0), 2)
+        for c in yellow_contours:
+            cv2.drawContours(composite, [c], -1, (255, 0, 255), 2)
+        cv2.imshow("Khoj-o-Drone Debug View", composite)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

@@ -105,6 +105,29 @@ pico_ws/
 
 ---
 
+## 🎯 Task 1A: Survivor Detection & Localization
+
+Task 1A implements the core image processing and computer vision pipeline to extract survivor locations from an aerial photograph of the disaster arena.
+
+### Pipeline Execution:
+```bash
+# Inside Docker container:
+cd /root/pico_ws/src/swift_pico/scripts
+python3 task1a.py --image image_1.jpg
+```
+
+### Seven-Stage Processing Pipeline:
+1. **Corner Fiducials**: ArUco detection (`DICT_4X4_250`, IDs 80, 85, 90, 95).
+2. **Perspective Rectification**: Homography warping to $900 \times 900\text{ px}$ canvas using Euclidean inner-corner selection.
+3. **Cartesian Reference Grid**: $12 \times 12$ analytical grid ($75\text{ px}$ cell pitch, 121 intersections).
+4. **Alphanumeric Naming**: Grid coordinate system (`A1` top-left to `K11` bottom-right).
+5. **Color Segmentation**: HSV masks for Red (`Critical Survivors`) and Yellow (`Stable Survivors`) with morphological filtering.
+6. **Centroid Reduction**: Spatial image moments ($M_{10}/M_{00}, M_{01}/M_{00}$) with zero-area guards.
+7. **Intersection Snapping & File Generation**: Writes `<image_name>_results.txt` matching exact official formatting.
+
+---
+
 ## 📚 Documentation Index
 * 📖 [**Technical Details & Theory Guide (`technical_details.md`)**](./technical_details.md)
 * 🛠️ [**Troubleshooting & Bug Log (`troubleshoot.md`)**](./troubleshoot.md)
+

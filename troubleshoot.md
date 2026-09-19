@@ -155,3 +155,34 @@ Reset ownership of all files in `~/pico_ws` to your host user:
 sudo chown -R $USER:$USER ~/pico_ws
 ```
 
+---
+
+### Issue 8: Automated Evaluator Hanging / Timeout
+
+#### Symptom:
+Automated evaluation scripts (`eyantra-autoeval` or server runners) report timeout or freeze indefinitely when testing `task1a.py`.
+
+#### Cause:
+Interactive GUI calls (`cv2.imshow`, `cv2.waitKey(0)`) block standard I/O execution waiting for an interactive desktop keypress event that never arrives in automated headless testing.
+
+#### Fix:
+Ensure all `cv2.imshow` and `cv2.waitKey` calls are guarded behind a development-only flag (e.g., `--display`) and default to headless execution in production.
+
+---
+
+### Issue 9: Output File Format Discrepancies
+
+#### Symptom:
+Evaluator marks output as invalid even though survivor names are correct.
+
+#### Cause:
+Extra spaces, missing colons, or improper line breaks in `<image>_results.txt`.
+
+#### Strict Specification:
+* Line 1: `Detected marker IDs: [80, 85, 90, 95]`
+* Line 2: *(empty line)*
+* Line 3: `Critical Survivors: B7, C10, I2`
+* Line 4: `Stable Survivors: D2, E9, H6`
+* Use `', '.join(survivor_list)` to guarantee exactly one comma and one space between names.
+
+

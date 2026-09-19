@@ -1,0 +1,4 @@
+Detected marker IDs: [85, 90, 95, 80]
+
+Critical Survivors: B7, C10, I2
+Stable Survivors: D2, E9, H6
