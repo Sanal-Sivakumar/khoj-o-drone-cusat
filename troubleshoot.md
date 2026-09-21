@@ -15,6 +15,9 @@ This document catalogs every error, environment conflict, and bug encountered du
 | `AttributeError: module 'cv2.aruco' has no attribute 'detectMarkers'` | OpenCV ArUco API breaking changes between OpenCV 4.6 and 4.7+ / 5.x | [Issue 5](#issue-5-opencv-aruco-api-version-changes) |
 | Warped image is rotated, flipped, or inverted | Incorrect ordering of Source vs. Destination points in Homography | [Issue 6](#issue-6-perspective-transform-point-ordering-mismatch) |
 | Permission denied when editing files on Host | Root-owned files created by Docker build processes | [Issue 7](#issue-7-handling-root-permissions-on-mounted-workspace) |
+| Automated Evaluator hanging or timeout | Interactive `cv2.imshow` / `cv2.waitKey` in submission code | [Issue 8](#issue-8-automated-evaluator-hanging--timeout) |
+| Output file format discrepancies | Formatting, spacing, or newline mismatch | [Issue 9](#issue-9-output-file-format-discrepancies) |
+| `AttributeError: module 'cv2.aruco' has no attribute 'DetectorParameters'` | Evaluator uses Ubuntu 22.04 system OpenCV 4.5.4 (`DetectorParameters_create`) | [Issue 10](#issue-10-attributeerror-module-cv2aruco-has-no-attribute-detectorparameters) |
 
 ---
 
@@ -170,19 +173,45 @@ Ensure all `cv2.imshow` and `cv2.waitKey` calls are guarded behind a development
 
 ---
 
-### Issue 9: Output File Format Discrepancies
+* Use `', '.join(survivor_list)` to guarantee exactly one comma and one space between names.
+
+---
+
+### Issue 10: `AttributeError: module 'cv2.aruco' has no attribute 'DetectorParameters'`
 
 #### Symptom:
-Evaluator marks output as invalid even though survivor names are correct.
+When submitting `KD_5844.zip` to the automated e-Yantra evaluation portal, the evaluator fails with:
+```text
+AttributeError: module 'cv2.aruco' has no attribute 'DetectorParameters'. Did you mean: 'DetectorParameters_create'?
+```
 
 #### Cause:
-Extra spaces, missing colons, or improper line breaks in `<image>_results.txt`.
+The local developer environment / container had OpenCV 4.7+ or 5.x installed, where `cv2.aruco.DetectorParameters()` is standard. However, the e-Yantra remote evaluation server runs on Ubuntu 22.04 LTS with standard system OpenCV 4.5.4 / 4.6, which uses `cv2.aruco.DetectorParameters_create()`.
 
-#### Strict Specification:
-* Line 1: `Detected marker IDs: [80, 85, 90, 95]`
-* Line 2: *(empty line)*
-* Line 3: `Critical Survivors: B7, C10, I2`
-* Line 4: `Stable Survivors: D2, E9, H6`
-* Use `', '.join(survivor_list)` to guarantee exactly one comma and one space between names.
+#### Fix:
+Use multi-version fallback guards for both parameter instantiation and dictionary lookup:
+```python
+# 1. Dictionary lookup fallback
+if hasattr(cv2.aruco, "getPredefinedDictionary"):
+    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
+else:
+    aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
+
+# 2. Parameter creation fallback
+if hasattr(cv2.aruco, "DetectorParameters_create"):
+    parameters = cv2.aruco.DetectorParameters_create()
+elif hasattr(cv2.aruco, "DetectorParameters"):
+    parameters = cv2.aruco.DetectorParameters()
+else:
+    parameters = None
+
+# 3. Detection method fallback
+if hasattr(cv2.aruco, "ArucoDetector"):
+    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+    corners, ids, _ = detector.detectMarkers(image)
+else:
+    corners, ids, _ = cv2.aruco.detectMarkers(image, aruco_dict, parameters=parameters)
+```
+
 
 

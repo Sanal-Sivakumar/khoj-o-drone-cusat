@@ -1,7 +1,8 @@
 # Khoj-o-Drone (KD) — eYRC 2026–27
 
 **Autonomous AI-Powered Disaster-Response Drone System**  
-e-Yantra Robotics Competition (eYRC 2026–27)
+e-Yantra Robotics Competition (eYRC 2026–27)  
+**Team ID**: `5844` (Submission Prefix: `KD_5844`)
 
 ---
 
@@ -66,6 +67,8 @@ pico_ws/
     ├── swift_pico/                   # Core drone autonomy and perception package
     │   ├── scripts/
     │   │   ├── task1a.py             # Task 1A: Survivor detection & localization
+    │   │   ├── KD_5844_task1a.py      # Official Task 1A submission script (Team 5844)
+    │   │   ├── KD_5844.zip           # Submission ZIP package
     │   │   └── image_1.jpg           # Sample disaster zone survey photograph
     │   ├── src/                      # Flight controllers (Task 1B, 1C)
     │   ├── launch/                   # ROS 2 simulation launch files

@@ -3,6 +3,7 @@
 Khoj-o-Drone (KD) — Task 1A: Survivor Detection and Localization
 e-Yantra Robotics Competition (eYRC 2026–27)
 
+Team ID: KD_5844
 Authors: Sanal Sivakumar & Team
 """
 
@@ -55,48 +56,74 @@ class ArenaCoordinateSystem:
 
 def detect_corner_markers(image):
     """
-    Detects ArUco markers (DICT_4X4_250) and validates that IDs 80, 85, 90, 95 exist.
+    Detects ArUco markers (DICT_4X4_250) compatible across ALL OpenCV versions
+    (OpenCV 3.x, 4.2, 4.5.x, 4.6.x, 4.7+, 5.x).
     """
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
-    parameters = cv2.aruco.DetectorParameters()
+    # 1. Get dictionary (backward compatible)
+    if hasattr(cv2.aruco, "getPredefinedDictionary"):
+        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
+    else:
+        aruco_dict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_250)
 
+    # 2. Get detector parameters (backward compatible)
+    if hasattr(cv2.aruco, "DetectorParameters_create"):
+        # OpenCV <= 4.6 (e.g. OpenCV 4.5.4 on Ubuntu 22.04)
+        parameters = cv2.aruco.DetectorParameters_create()
+    elif hasattr(cv2.aruco, "DetectorParameters"):
+        # OpenCV >= 4.7 / 5.x
+        parameters = cv2.aruco.DetectorParameters()
+    else:
+        parameters = None
+
+    # 3. Detect markers
     if hasattr(cv2.aruco, "ArucoDetector"):
         detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
         corners, ids, _ = detector.detectMarkers(image)
     else:
         corners, ids, _ = cv2.aruco.detectMarkers(image, aruco_dict, parameters=parameters)
 
-    if ids is None or len(ids) == 0:
-        print("[ERROR] No ArUco markers detected in the image.", file=sys.stderr)
+    if ids is None or len(ids) < 4:
+        print(f"[ERROR] Expected at least 4 ArUco markers, but found: {0 if ids is None else len(ids)}", file=sys.stderr)
         sys.exit(1)
 
     detected_ids = [int(x) for x in ids.flatten()]
-    required_ids = {80, 85, 90, 95}
-    missing_ids = required_ids - set(detected_ids)
-    if missing_ids:
-        print(f"[ERROR] Missing required marker IDs: {missing_ids}.", file=sys.stderr)
-        sys.exit(1)
-
     return corners, ids, detected_ids
 
 
 def straighten_arena(image, corners, ids, output_size=900):
     """
-    Performs perspective transform using the inner corners of markers 80, 85, 90, 95
+    Performs perspective transform using the inner corners of the 4 corner markers
     to produce a square top-down 900x900 canvas of the playing field.
+    Works for any marker IDs (image_1, image_2, etc.) using geometric quadrant sorting.
     """
     marker_dict = {int(mid): corner[0] for mid, corner in zip(ids.flatten(), corners)}
-    centers = [np.mean(marker_dict[mid], axis=0) for mid in [80, 85, 90, 95]]
-    arena_center = np.mean(centers, axis=0)
+    marker_centers = {mid: np.mean(pts, axis=0) for mid, pts in marker_dict.items()}
+
+    # Compute arena center from all detected markers
+    all_centers = list(marker_centers.values())
+    arena_center = np.mean(all_centers, axis=0)
 
     def get_inner_corner(pts, center):
         dists = [np.linalg.norm(pt - center) for pt in pts]
         return pts[np.argmin(dists)]
 
-    tl = get_inner_corner(marker_dict[80], arena_center)  # Marker 80 -> Top-Left
-    tr = get_inner_corner(marker_dict[85], arena_center)  # Marker 85 -> Top-Right
-    br = get_inner_corner(marker_dict[90], arena_center)  # Marker 90 -> Bottom-Right
-    bl = get_inner_corner(marker_dict[95], arena_center)  # Marker 95 -> Bottom-Left
+    # If standard IDs 80, 85, 90, 95 are present, use them
+    if {80, 85, 90, 95}.issubset(set(marker_dict.keys())):
+        tl = get_inner_corner(marker_dict[80], arena_center)
+        tr = get_inner_corner(marker_dict[85], arena_center)
+        br = get_inner_corner(marker_dict[90], arena_center)
+        bl = get_inner_corner(marker_dict[95], arena_center)
+    else:
+        # Generic geometric quadrant sorting for arbitrary marker IDs (e.g. image_2.jpg)
+        tl_id = min(marker_centers.keys(), key=lambda m: (marker_centers[m][0] - 0)**2 + (marker_centers[m][1] - 0)**2)
+        tr_id = min(marker_centers.keys(), key=lambda m: (marker_centers[m][0] - image.shape[1])**2 + (marker_centers[m][1] - 0)**2)
+        br_id = min(marker_centers.keys(), key=lambda m: (marker_centers[m][0] - image.shape[1])**2 + (marker_centers[m][1] - image.shape[0])**2)
+        bl_id = min(marker_centers.keys(), key=lambda m: (marker_centers[m][0] - 0)**2 + (marker_centers[m][1] - image.shape[0])**2)
+
+        tl = get_inner_corner(marker_dict[tl_id], arena_center)
+        tr = get_inner_corner(marker_dict[tr_id], arena_center)
+        br = get_inner_corner(marker_dict[br_id], arena_center)
+        bl = get_inner_corner(marker_dict[bl_id], arena_center)
 
     src_pts = np.array([tl, tr, br, bl], dtype=np.float32)
     dst_pts = np.array([
@@ -180,18 +207,12 @@ def write_results_file(image_path, detected_ids, critical_survivors, stable_surv
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Khoj-o-Drone Task 1A Pipeline")
+    parser = argparse.ArgumentParser(description="Khoj-o-Drone Task 1A Pipeline — Team KD_5844")
     parser.add_argument(
         "--image",
         type=str,
         required=True,
         help="Path to input disaster image",
-    )
-    parser.add_argument(
-        "--display",
-        action="store_true",
-        default=False,
-        help="Show visual composite window (development only; defaults to False for evaluation)",
     )
     args = parser.parse_args()
 
@@ -237,18 +258,6 @@ def main():
     # Write output file
     results_path = write_results_file(args.image, detected_ids, critical_survivors, stable_survivors)
     print(f"[SUCCESS] Pipeline executed successfully. Results written to: {results_path}")
-
-    # Optional development display
-    if args.display:
-        from task1a import build_composite_debug_view
-        composite = warped_arena.copy()
-        for c in red_contours:
-            cv2.drawContours(composite, [c], -1, (255, 255, 0), 2)
-        for c in yellow_contours:
-            cv2.drawContours(composite, [c], -1, (255, 0, 255), 2)
-        cv2.imshow("Khoj-o-Drone Debug View", composite)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

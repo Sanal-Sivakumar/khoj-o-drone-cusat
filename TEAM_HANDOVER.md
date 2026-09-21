@@ -1,5 +1,8 @@
 # Team Handover & Development Guide — Khoj-o-Drone (KD)
 
+**Team ID**: `5844` (Submission Code: `KD_5844`)  
+e-Yantra Robotics Competition (eYRC 2026–27)
+
 Welcome to the **Khoj-o-Drone** project! This document serves as the complete handover reference for team members taking over the next phases (Task 1B / Task 1C / Navigation / Control).
 
 It explains what has been accomplished so far, how the workspace and Docker environment are set up, how to navigate the codebase, and includes a **Master AI Prompt** to align any AI assistant you use during development.
@@ -8,17 +11,22 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 
 ## 📌 Executive Summary of Current Progress
 
-### 1. Environment & Architecture
+### 1. Team & Submission Identity
+* **Team ID**: `5844`
+* **Official Submission Prefix**: `KD_5844`
+* **Task 1A Package**: `KD_5844.zip` (containing `KD_5844_task1a.py` at root)
+
+### 2. Environment & Architecture
 * **Host Operating System**: Ubuntu (Host filesystem stores and persists all code in `~/pico_ws`).
 * **Containerized Environment**: Ubuntu 22.04 LTS running **ROS 2 Humble**, **MuJoCo 3.9.0**, and **NVIDIA GPU acceleration**.
 * **Startup Automation**: One-click launcher script `~/pico_ws/start_ros.sh` handles X11 display forwarding, GPU passthrough, container cleanup, and workspace bind mounting (`~/pico_ws` $\leftrightarrow$ `/root/pico_ws`).
 
-### 2. Version Control (Git)
+### 3. Version Control (Git)
 * **Team Repository (`origin`)**: `https://github.com/Sanal-Sivakumar/khoj-o-drone-cusat.git`
 * **e-Yantra Official Template (`upstream`)**: `https://github.com/eYantra-Robotics-Competition/eYRC_26-27_Khojo-Drone.git`
 * **Active Working Branch**: `kd_sim`
 
-### 3. Task 1A Status: ✅ COMPLETED & VERIFIED
+### 4. Task 1A Status: ✅ COMPLETED & VERIFIED
 * **Script**: `swift_pico/scripts/task1a.py`
 * **Pipeline Implemented**:
   1. ArUco Marker Detection (`DICT_4X4_250`, IDs `80`, `85`, `90`, `95`).
@@ -107,8 +115,10 @@ Copy and paste the entire block below into your AI assistant (ChatGPT, Claude, G
 ```text
 You are assisting our team with the e-Yantra Robotics Competition (eYRC 2026–27) — Khoj-o-Drone (KD) project.
 
-### 1. Project Context
-Khoj-o-Drone is an autonomous disaster-response drone system. A drone surveys an urban disaster zone, processes aerial imagery and sensor streams, identifies trapped survivors, estimates their coordinates, plans safe flight paths in a MuJoCo physics simulation, and executes rescue assistance.
+### 1. Team & Project Identity
+- Team ID: 5844
+- Submission Prefix: KD_5844
+- Project: Khoj-o-Drone (KD) — Autonomous disaster-response drone system. A drone surveys an urban disaster zone, processes aerial imagery and sensor streams, identifies trapped survivors, estimates their coordinates, plans safe flight paths in a MuJoCo physics simulation, and executes rescue assistance.
 
 ### 2. Workspace & Architecture
 - Host OS: Ubuntu (Host directory: ~/pico_ws)
@@ -121,20 +131,24 @@ Khoj-o-Drone is an autonomous disaster-response drone system. A drone surveys an
 - e-Yantra Template Remote (upstream): https://github.com/eYantra-Robotics-Competition/eYRC_26-27_Khojo-Drone.git
 - Active Branch: kd_sim
 
-### 3. Current Progress (Task 1A Completed)
-- Task 1A (Survivor Detection & Localization) is fully implemented in src/swift_pico/scripts/task1a.py.
-- It detects ArUco corner markers (DICT_4X4_250: IDs 80, 85, 90, 95), performs 900x900 perspective rectification, generates a 12x12 grid (121 named intersections from A1 to K11), extracts Red (Critical) and Yellow (Stable) survivors via HSV segmentation and spatial image moments, snaps them to nearest intersections, and writes <image_name>_results.txt.
+### 3. Current Progress (Task 1A Completed & Packaged)
+- Task 1A (Survivor Detection & Localization) is fully implemented in src/swift_pico/scripts/task1a.py and official submission script KD_5844_task1a.py.
+- Packaged as KD_5844.zip (containing only KD_5844_task1a.py at root).
+- Implemented with cross-version OpenCV compatibility (supports OpenCV 4.5.4 DetectorParameters_create as well as OpenCV 4.7+ / 5.x DetectorParameters).
+- It detects ArUco corner markers (DICT_4X4_250: IDs 80, 85, 90, 95 or generic quadrant-sorted markers), performs 900x900 perspective rectification, generates a 12x12 grid (121 named intersections from A1 to K11), extracts Red (Critical) and Yellow (Stable) survivors via HSV segmentation and spatial image moments, snaps them to nearest intersections, and writes <image_name>_results.txt.
 
 ### 4. Development Rules to Strictly Follow
 1. Always explain concepts from first principles (mathematical formulation, ROS 2 architecture, MuJoCo physics).
 2. Distinguish clearly between Host terminal commands and Docker container commands.
 3. Never recommend 'pip install opencv-python' (only use Ubuntu apt packages to avoid breaking ROS 2 cv_bridge).
 4. Do NOT use AI tool names in branch names, commit messages, file names, or documentation. Use team/feature names.
-5. Continuously maintain the 3 documentation files in src/:
+5. Continuously maintain the documentation files in src/:
    - README.md (project overview, quickstart)
    - technical_details.md (beginner-to-advanced deep-dive theory and math)
    - troubleshoot.md (error log, root causes, fixes, and precautions)
+   - TEAM_HANDOVER.md (team onboarding and AI alignment prompt)
 6. Write production-grade, generalized, headless code (no hardcoded test image names, no blocking GUI calls during evaluation).
 7. Guide step-by-step, verifying checkpoints visually and quantitatively before proceeding.
 ```
+
 
