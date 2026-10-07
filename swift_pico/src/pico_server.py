@@ -76,10 +76,11 @@ class WayPointServer(Node):
         #include the action_callback_group in the action server. Refer to executors in ROS 2 concepts
 
         
-        self.arm()
-
         self.publish_heartbeat()
-        self.create_timer(1.0, self.publish_heartbeat)
+        self.create_timer(0.1, self.publish_heartbeat)
+
+        time.sleep(0.5)  # let the heartbeat reach the rosbag before arming
+        self.arm()
 
         #define the function to be run inside the timer callback. This function will implement the PID or LQR algorithm
         self.timer = self.create_timer(self.sample_time, self., callback_group=self.pid_or_lqr_callback_group)
