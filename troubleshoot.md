@@ -21,6 +21,7 @@ This document catalogs every error, environment conflict, and bug encountered du
 | `failed to initialize NVML: Driver Not Loaded` | Ubuntu kernel update without matching NVIDIA kernel module package installed | [Issue 11](#issue-11-failed-to-initialize-nvml-driver-not-loaded) |
 | `Package 'swift_pico' not found` | Workspace not built or local overlay not sourced (`source install/setup.bash`) | [Issue 12](#issue-12-package-swift_pico-not-found-searching-optroshumble) |
 | `Package 'image_view' not found` | `ros-humble-image-view` package missing inside Docker container | [Issue 13](#issue-13-package-image_view-not-found) |
+| `libactuator_msgs__rosidl_typesupport_cpp.so: cannot open shared object file` | Missing `ros-humble-actuator-msgs` shared library | [Issue 14](#issue-14-libactuator_msgs__rosidl_typesupport_cppso-cannot-open-shared-object-file) |
 
 ---
 
@@ -291,6 +292,32 @@ Install `ros-humble-image-view` inside the Docker container:
 ```bash
 apt update && apt install -y ros-humble-image-view
 ```
+
+---
+
+### Issue 14: `libactuator_msgs__rosidl_typesupport_cpp.so: cannot open shared object file`
+
+#### Symptom:
+`mujoco_bridge` and `roll_pitch_yawrate_thrust_controller_node` die immediately on launch with exit code 127:
+```text
+[ERROR] [mujoco_bridge-1]: process has died [pid ..., exit code 127]
+[ERROR] [roll_pitch_yawrate_thrust_controller_node-3]: process has died [pid ..., exit code 127]
+error while loading shared libraries: libactuator_msgs__rosidl_typesupport_cpp.so: cannot open shared object file: No such file or directory
+```
+
+#### Cause:
+`mujoco_bridge` and the controller binaries depend dynamically on `actuator_msgs` ROS 2 type support libraries. The package `ros-humble-actuator-msgs` is missing from the container environment.
+
+#### Fix:
+Install `ros-humble-actuator-msgs` inside the Docker container:
+```bash
+apt update && apt install -y ros-humble-actuator-msgs
+```
+Then re-launch:
+```bash
+ros2 launch swift_pico swift_pico_simulation.launch.py
+```
+
 
 
 
