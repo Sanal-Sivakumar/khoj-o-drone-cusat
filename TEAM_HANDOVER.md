@@ -67,12 +67,18 @@ git remote add upstream https://github.com/eYantra-Robotics-Competition/eYRC_26-
    ```
 3. Inside the container shell (`root@...:/root/pico_ws#`):
    ```bash
+   # One-time container setup (installs actuator_msgs, image_view, GLFW, registers MuJoCo)
+   ./setup_env.sh
+
    # Build the workspace
-   colcon build && source install/setup.bash
+   colcon build --symlink-install && source install/setup.bash
 
    # Run Task 1A test to verify setup
    cd /root/pico_ws/src/swift_pico/scripts
    python3 task1a.py --image image_1.jpg
+
+   # Launch Task 1B MuJoCo simulation
+   ros2 launch swift_pico swift_pico_simulation.launch.py
    ```
 
 ---

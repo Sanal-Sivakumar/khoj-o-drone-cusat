@@ -58,6 +58,7 @@ Disaster Zone ──► Drone / Sensors ──► Data Acquisition ──► Com
 ```text
 pico_ws/
 ├── start_ros.sh                      # One-click Docker environment launcher
+├── setup_env.sh                      # One-click container dependency installer
 ├── Khoj-o-Drone_Docker_Environment_Guide.pdf # Complete printable environment guide
 └── src/
     ├── README.md                     # Project overview and quickstart (this file)
@@ -96,14 +97,22 @@ pico_ws/
    ./start_ros.sh
    ```
 3. Inside the container shell (`root@...:/root/pico_ws#`):
+   * **First-time setup / dependency install**:
+     ```bash
+     ./setup_env.sh
+     ```
    * **Build workspace**:
      ```bash
-     colcon build && source install/setup.bash
+     colcon build --symlink-install && source install/setup.bash
      ```
    * **Run Task 1A Perception Pipeline**:
      ```bash
      cd /root/pico_ws/src/swift_pico/scripts
      python3 task1a.py --image image_1.jpg
+     ```
+   * **Launch Task 1B MuJoCo Simulation**:
+     ```bash
+     ros2 launch swift_pico swift_pico_simulation.launch.py
      ```
 
 ---
