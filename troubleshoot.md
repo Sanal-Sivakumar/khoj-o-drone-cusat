@@ -18,6 +18,7 @@ This document catalogs every error, environment conflict, and bug encountered du
 | Automated Evaluator hanging or timeout | Interactive `cv2.imshow` / `cv2.waitKey` in submission code | [Issue 8](#issue-8-automated-evaluator-hanging--timeout) |
 | Output file format discrepancies | Formatting, spacing, or newline mismatch | [Issue 9](#issue-9-output-file-format-discrepancies) |
 | `AttributeError: module 'cv2.aruco' has no attribute 'DetectorParameters'` | Evaluator uses Ubuntu 22.04 system OpenCV 4.5.4 (`DetectorParameters_create`) | [Issue 10](#issue-10-attributeerror-module-cv2aruco-has-no-attribute-detectorparameters) |
+| `failed to initialize NVML: Driver Not Loaded` | Ubuntu kernel update without matching NVIDIA kernel module package installed | [Issue 11](#issue-11-failed-to-initialize-nvml-driver-not-loaded) |
 
 ---
 
@@ -212,6 +213,36 @@ if hasattr(cv2.aruco, "ArucoDetector"):
 else:
     corners, ids, _ = cv2.aruco.detectMarkers(image, aruco_dict, parameters=parameters)
 ```
+
+---
+
+### Issue 11: `failed to initialize NVML: Driver Not Loaded`
+
+#### Symptom:
+Running `./start_ros.sh` fails with:
+```text
+docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime createfailed: could not apply required modification to OCI specification: error modifying OCI spec: failed to create the automatic CDI modifier: failed to generate CDI spec for mode "auto": failed to construct device spec generators: failed to initialize NVML: Driver Not Loaded
+```
+
+#### Cause:
+Ubuntu updated the host Linux kernel (e.g. to `7.0.0-31-generic`), but the corresponding NVIDIA driver kernel module package (`linux-modules-nvidia-580-open-7.0.0-31-generic`) was not yet installed, preventing the NVIDIA kernel module from loading.
+
+#### Fix:
+1. **Install matching NVIDIA kernel modules for the running kernel**:
+   ```bash
+   sudo apt update
+   sudo apt install -y linux-modules-nvidia-580-open-$(uname -r)
+   ```
+2. **Load the NVIDIA driver module**:
+   ```bash
+   sudo modprobe nvidia
+   ```
+3. **Verify driver communication**:
+   ```bash
+   nvidia-smi
+   ```
+   *(If `modprobe` reports conflicts or the driver was freshly installed, run `sudo reboot` to start with the clean kernel module).*
+
 
 
 
