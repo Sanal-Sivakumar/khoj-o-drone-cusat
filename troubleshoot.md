@@ -22,6 +22,7 @@ This document catalogs every error, environment conflict, and bug encountered du
 | `Package 'swift_pico' not found` | Workspace not built or local overlay not sourced (`source install/setup.bash`) | [Issue 12](#issue-12-package-swift_pico-not-found-searching-optroshumble) |
 | `Package 'image_view' not found` | `ros-humble-image-view` package missing inside Docker container | [Issue 13](#issue-13-package-image_view-not-found) |
 | `libactuator_msgs__rosidl_typesupport_cpp.so: cannot open shared object file` | Missing `ros-humble-actuator-msgs` shared library | [Issue 14](#issue-14-libactuator_msgs__rosidl_typesupport_cppso-cannot-open-shared-object-file) |
+| `libmujoco.so.3.9.0: cannot open shared object file` | MuJoCo library path not registered in system dynamic linker (`ldconfig`) | [Issue 15](#issue-15-libmujocoso390-cannot-open-shared-object-file) |
 
 ---
 
@@ -317,6 +318,35 @@ Then re-launch:
 ```bash
 ros2 launch swift_pico swift_pico_simulation.launch.py
 ```
+
+---
+
+### Issue 15: `libmujoco.so.3.9.0: cannot open shared object file`
+
+#### Symptom:
+`mujoco_bridge` crashes with:
+```text
+[mujoco_bridge-1] /root/pico_ws/install/swift_pico/lib/swift_pico/mujoco_bridge: 
+  error while loading shared libraries: libmujoco.so.3.9.0: cannot open shared object file: No such file or directory
+```
+
+#### Cause:
+MuJoCo is installed in `/usr/local/lib/python3.10/dist-packages/mujoco`, but this path is not automatically searched by the Linux dynamic library linker (`ld.so`).
+
+#### Fix:
+Register the MuJoCo shared library path with `ldconfig` and ensure `libglfw3` is installed:
+```bash
+# 1. Register MuJoCo library directory with the system linker
+echo "/usr/local/lib/python3.10/dist-packages/mujoco" > /etc/ld.so.conf.d/mujoco.conf
+ldconfig
+
+# 2. Install GLFW and dependencies
+apt update && apt install -y libglfw3 libglfw3-dev
+
+# 3. Launch simulation
+ros2 launch swift_pico swift_pico_simulation.launch.py
+```
+
 
 
 
