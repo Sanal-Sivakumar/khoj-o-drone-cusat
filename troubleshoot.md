@@ -19,6 +19,7 @@ This document catalogs every error, environment conflict, and bug encountered du
 | Output file format discrepancies | Formatting, spacing, or newline mismatch | [Issue 9](#issue-9-output-file-format-discrepancies) |
 | `AttributeError: module 'cv2.aruco' has no attribute 'DetectorParameters'` | Evaluator uses Ubuntu 22.04 system OpenCV 4.5.4 (`DetectorParameters_create`) | [Issue 10](#issue-10-attributeerror-module-cv2aruco-has-no-attribute-detectorparameters) |
 | `failed to initialize NVML: Driver Not Loaded` | Ubuntu kernel update without matching NVIDIA kernel module package installed | [Issue 11](#issue-11-failed-to-initialize-nvml-driver-not-loaded) |
+| `Package 'swift_pico' not found` | Workspace not built or local overlay not sourced (`source install/setup.bash`) | [Issue 12](#issue-12-package-swift_pico-not-found-searching-optroshumble) |
 
 ---
 
@@ -242,6 +243,35 @@ Ubuntu updated the host Linux kernel (e.g. to `7.0.0-31-generic`), but the corre
    nvidia-smi
    ```
    *(If `modprobe` reports conflicts or the driver was freshly installed, run `sudo reboot` to start with the clean kernel module).*
+
+---
+
+### Issue 12: `Package 'swift_pico' not found: searching: ['/opt/ros/humble']`
+
+#### Symptom:
+Running `ros2 launch swift_pico ...` or `ros2 run swift_pico ...` inside the Docker container fails with:
+```text
+Package 'swift_pico' not found: "package 'swift_pico' not found, searching: ['/opt/ros/humble']"
+```
+
+#### Cause:
+By default, new shell sessions only source the base ROS 2 Humble installation at `/opt/ros/humble`. ROS 2 has not registered your workspace packages (`swift_pico`, `rotors_simulator`, etc.) because the workspace has not been built or the local overlay setup script (`install/setup.bash`) has not been sourced in the current terminal.
+
+#### Fix:
+Run the following inside `/root/pico_ws`:
+```bash
+# 1. Build all packages in the workspace
+cd /root/pico_ws
+colcon build --symlink-install
+
+# 2. Source the workspace overlay
+source /root/pico_ws/install/setup.bash
+
+# 3. Launch the simulation
+ros2 launch swift_pico swift_pico_simulation.launch.py
+```
+*(Tip: Add `source /root/pico_ws/install/setup.bash` to `/root/.bashrc` to auto-source on every container launch).*
+
 
 
 
