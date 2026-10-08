@@ -20,6 +20,7 @@ This document catalogs every error, environment conflict, and bug encountered du
 | `AttributeError: module 'cv2.aruco' has no attribute 'DetectorParameters'` | Evaluator uses Ubuntu 22.04 system OpenCV 4.5.4 (`DetectorParameters_create`) | [Issue 10](#issue-10-attributeerror-module-cv2aruco-has-no-attribute-detectorparameters) |
 | `failed to initialize NVML: Driver Not Loaded` | Ubuntu kernel update without matching NVIDIA kernel module package installed | [Issue 11](#issue-11-failed-to-initialize-nvml-driver-not-loaded) |
 | `Package 'swift_pico' not found` | Workspace not built or local overlay not sourced (`source install/setup.bash`) | [Issue 12](#issue-12-package-swift_pico-not-found-searching-optroshumble) |
+| `Package 'image_view' not found` | `ros-humble-image-view` package missing inside Docker container | [Issue 13](#issue-13-package-image_view-not-found) |
 
 ---
 
@@ -271,6 +272,26 @@ source /root/pico_ws/install/setup.bash
 ros2 launch swift_pico swift_pico_simulation.launch.py
 ```
 *(Tip: Add `source /root/pico_ws/install/setup.bash` to `/root/.bashrc` to auto-source on every container launch).*
+
+---
+
+### Issue 13: `Package 'image_view' not found`
+
+#### Symptom:
+Launching the drone simulation fails with:
+```text
+[ERROR] [launch]: Caught exception in launch: "package 'image_view' not found, searching: [...]"
+```
+
+#### Cause:
+The ROS 2 `swift_pico_simulation.launch.py` launch file includes an `image_view` node to render whycode overhead camera frames with GUI bounding boxes. The Ubuntu system package `ros-humble-image-view` is not installed inside the container.
+
+#### Fix:
+Install `ros-humble-image-view` inside the Docker container:
+```bash
+apt update && apt install -y ros-humble-image-view
+```
+
 
 
 
