@@ -145,3 +145,9 @@ python3 task1a.py --image image_1.jpg
 * 🤝 [**Team Handover & AI Guide (`TEAM_HANDOVER.md`)**](./TEAM_HANDOVER.md)
 
 
+
+### Official Results
+| Task | Score | Hold time | Stabilized at | Target |
+| :--- | :-: | :-: | :-: | :-: |
+| Task 1B | 40/40 | 10.00 s of 10.00 s | 10.03 s | under 15 s |
+| Task 1C | 40/40 | 10.00 s of 10.00 s | 14.03 s | under 15 s |

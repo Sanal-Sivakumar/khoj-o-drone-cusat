@@ -270,3 +270,9 @@ ROS 2 (Robot Operating System 2) serves as the computational nervous system:
 * **Sensors**: Simulated IMU (accelerometer/gyroscope), downward rangefinder, and RGB camera streams mapped directly to ROS 2 topics.
 
 
+
+### Tuning notes
+* Task 1B tunes only the throttle (Z) axis via `/throttle_pid`, watching `throttle_error`.
+* Task 1C adds pitch (X, `/pitch_pid`) and roll (Y, `/roll_pid`) on top of altitude hold. The throttle gains were retuned (Task 1B: kp 410, ki 17, kd 64 -> Task 1C: kp 80, ki 2, kd 60) because tilting the drone to move horizontally changes how thrust holds altitude.
+* Pass criterion for both tasks: error within ±0.4 of the setpoint, then held for 10 s straight.
+* Task 1C stabilized at 14.03 s against a 15 s target, so there is little margin. If the simulation changes, re-check this first.
