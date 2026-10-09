@@ -27,16 +27,19 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Active Working Branch**: `kd_sim`
 
 ### 4. Task 1A Status: ✅ COMPLETED & VERIFIED
-* **Script**: `swift_pico/scripts/task1a.py`
-* **Pipeline Implemented**:
-  1. ArUco Marker Detection (`DICT_4X4_250`, IDs `80`, `85`, `90`, `95`).
-  2. Homography Perspective Rectification to a normalized $900 \times 900\text{ px}$ top-down canvas using Euclidean inner-corner selection.
-  3. $12 \times 12$ analytical reference grid ($75.0\text{ px}$ cell size, 121 intersections).
-  4. Alphanumeric coordinate system (`A1` top-left to `K11` bottom-right).
-  5. HSV color segmentation for `Critical Survivors` (Red Triangles) and `Stable Survivors` (Yellow Circles) with morphological noise cleanup.
-  6. Spatial image moment centroid reduction ($M_{10}/M_{00}, M_{01}/M_{00}$) with division-by-zero protection.
-  7. Nearest intersection snapping with boundary safety guards.
-  8. Output file generation (`<image_name>_results.txt`) matching exact competition specifications character-for-character.
+* **Script**: `swift_pico/scripts/task1a.py` / `swift_pico/scripts/KD_5844_task1a.py`
+* **Package**: `KD_5844.zip`
+* **Pipeline**: ArUco detection, 900x900 perspective rectification, 12x12 grid snapping, Red/Yellow HSV segmentation, centroid moments, `<image>_results.txt`.
+
+### 5. Task 1B Status: ✅ COMPLETED & VERIFIED
+* **Controller**: `swift_pico/src/task_1b_controller`
+* **PID Tuning Configuration**: `swift_pico/src/pid_values.yaml`
+* **Submission Package**: `task_1b/KD_5844_task_1b.zip` (contains rosbag `task_1b_0.db3` & `metadata.yaml`)
+
+### 6. Task 1C Status: ✅ COMPLETED & VERIFIED
+* **Controller**: `swift_pico/src/task_1c_controller`
+* **Waypoint Navigation & Trajectory Tracking**: Autonomous waypoint following across 3D coordinates.
+* **Submission Package**: `task_1c/KD_5844_task_1c.zip` (contains rosbag `task_1c_0.db3` & `metadata.yaml`)
 
 ---
 
