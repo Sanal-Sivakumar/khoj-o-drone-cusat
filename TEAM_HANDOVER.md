@@ -140,11 +140,10 @@ You are assisting our team with the e-Yantra Robotics Competition (eYRC 2026–2
 - e-Yantra Template Remote (upstream): https://github.com/eYantra-Robotics-Competition/eYRC_26-27_Khojo-Drone.git
 - Active Branch: kd_sim
 
-### 3. Current Progress (Task 1A Completed & Packaged)
-- Task 1A (Survivor Detection & Localization) is fully implemented in src/swift_pico/scripts/task1a.py and official submission script KD_5844_task1a.py.
-- Packaged as KD_5844.zip (containing only KD_5844_task1a.py at root).
-- Implemented with cross-version OpenCV compatibility (supports OpenCV 4.5.4 DetectorParameters_create as well as OpenCV 4.7+ / 5.x DetectorParameters).
-- It detects ArUco corner markers (DICT_4X4_250: IDs 80, 85, 90, 95 or generic quadrant-sorted markers), performs 900x900 perspective rectification, generates a 12x12 grid (121 named intersections from A1 to K11), extracts Red (Critical) and Yellow (Stable) survivors via HSV segmentation and spatial image moments, snaps them to nearest intersections, and writes <image_name>_results.txt.
+### 3. Current Progress (Stage 1 Completed: Tasks 1A, 1B, 1C)
+- Task 1A (Survivor Detection & Localization): Fully implemented in src/swift_pico/scripts/KD_5844_task1a.py, packaged as KD_5844.zip. Scored 20/20.
+- Task 1B (Altitude Z-Axis PID Flight Control): Tuned via swift_pico/src/task_1b_controller and pid_values.yaml. Packaged in task_1b/KD_5844_task_1b.zip. Scored 40/40.
+- Task 1C (Multi-Axis Position Hold & Waypoint Tracking): Autonomous 3D trajectory tracking via swift_pico/src/task_1c_controller. Packaged in task_1c/KD_5844_task_1c.zip. Scored 40/40.
 
 ### 4. Development Rules to Strictly Follow
 1. Always explain concepts from first principles (mathematical formulation, ROS 2 architecture, MuJoCo physics).
@@ -159,5 +158,6 @@ You are assisting our team with the e-Yantra Robotics Competition (eYRC 2026–2
 6. Write production-grade, generalized, headless code (no hardcoded test image names, no blocking GUI calls during evaluation).
 7. Guide step-by-step, verifying checkpoints visually and quantitatively before proceeding.
 ```
+
 
 
