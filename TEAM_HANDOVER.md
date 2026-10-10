@@ -51,6 +51,13 @@ It explains what has been accomplished so far, how the workspace and Docker envi
   * Enters $\pm 0.4$ bounding sphere at $t = 4.3\text{ s}$ from arming.
   * Continuous 10.0s hold completed by $t = 14.3\text{ s}$ ($\le 15\text{ s}$ cutoff for **Maximum Marks: 20/20**).
   * Millimeter-level steady state accuracy: $|e_x| \le 0.01\text{ m},\; |e_y| \le 0.01\text{ m},\; |e_z| \le 0.02\text{ m}$.
+* **Submission Package**: `KD_5844_task_2a.zip` (contains `KD_5844_task_2a.py`, `task_2a_0.db3`, `metadata.yaml` with direct-root structure).
+* **Video Submission**: YouTube unlisted video titled `KD_5844_Task_2a` ($\ge 60\text{ s}$ continuous run showing terminals and sim).
+* **Official Scoring Benchmark**:
+  * **Hold** (8 marks): 10s continuous hold achieved.
+  * **Finishing Bonus** (4 marks): Full 10s hold achieved.
+  * **Speed** (8 marks): Completed hold at $14.3\text{ s}$ ($\le 15.0\text{ s}$ cutoff for full 8 marks).
+  * **Total Score**: **20 / 20 Maximum Marks**.
 * **Key Physics Insight**:
   * Rotational cross-coupling in MuJoCo Lee SE(3) controller requires:
     * `pitch_cmd = 1500 + out_x` (Pitch controls the $X$ axis)
