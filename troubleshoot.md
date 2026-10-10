@@ -447,6 +447,25 @@ pkill -9 -f whycode_node
 pkill -9 -f pid_tune
 ```
 
+---
+
+### Issue 21: `groups: cannot find name for group ID 992` & Pasted Commands Dropped
+
+#### Symptom:
+When running `docker exec -it ros2_humble bash` and immediately pasting commands, the warning `groups: cannot find name for group ID 992` is printed, and subsequent pasted lines are skipped or dropped.
+
+#### Cause:
+1. The host user belongs to GID 992 (host Docker/render group), which didn't exist in `/etc/group` inside the Ubuntu container image.
+2. Pasting multiple commands simultaneously into `docker exec` sends lines before the interactive pseudo-terminal (pty) has completed shell initialization.
+
+#### Fix:
+1. Add GID 992 to the container group table:
+   ```bash
+   docker exec ros2_humble groupadd -g 992 host_docker || true
+   ```
+2. Either wait for `root@...:#` prompt before pasting, or invoke one-shot commands directly from the host terminal via `docker exec -it ros2_humble bash -c "..."`.
+
+
 
 
 
