@@ -91,6 +91,12 @@ class Swift_Pico(Node):
         self.create_subscription(PIDTune, '/pitch_pid', self.pitch_set_pid, 10)
         self.create_subscription(PIDTune, '/roll_pid', self.roll_set_pid, 10)
 
+        # Sample time in seconds (as specified in e-Yantra boilerplate)
+        self.sample_time = 0.033
+
+        # Periodic PID execution timer (30 Hz)
+        self.pid_timer = self.create_timer(self.sample_time, self.pid)
+
         # Heartbeat timer (10 Hz for bag logging)
         self.create_timer(0.1, self.publish_heartbeat)
 
@@ -201,12 +207,16 @@ class Swift_Pico(Node):
             ]
             self.arm()
             self.get_logger().info(f"WhyCode Marker Detected at [{pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}]. Starting control loop.")
+
+    def pid(self):
+        '''Periodic PID control loop callback, called by timer at sample_time interval.'''
+        if not self.marker_received:
             return
 
-        # Execute PID directly synchronized with new vision frame
+        now = time.time()
         dt = now - self.last_pid_time
-        if dt < 0.015:  # Cap at ~60 Hz to prevent division by near-zero
-            return
+        if dt <= 0.005:
+            dt = self.sample_time
         self.last_pid_time = now
 
         self.compute_and_publish_pid(dt)
