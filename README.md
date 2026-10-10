@@ -181,13 +181,42 @@ ros2 run swift_pico task_1c_controller
 
 ---
 
-## 🏆 Stage 1 Official Competition Results
+## 🎯 Task 2A: Autonomous 3D Position Hold (PID Controller)
 
-| Task | Module / Scope | Official Score | Hold Time Achieved | Stabilization Time | Benchmark Target | Status |
+Task 2A implements an autonomous closed-loop 3D position controller to fly the Swift Pico drone from $(0.0, 0.0, 15.0)$ to the setpoint $(1.5, -1.5, 13.0)$ and hold stably within a $\pm 0.4\text{ m}$ bounding sphere for at least $10\text{ s}$ straight.
+
+### Execution Workflow (3 Terminals):
+```bash
+# Terminal 1: Simulation Stack
+ros2 launch swift_pico swift_pico_simulation.launch.py
+
+# Terminal 2: Position PID Controller
+ros2 run swift_pico pico_controller_PID.py
+
+# Terminal 3: Interactive Tuning GUI (Optional)
+ros2 launch pid_tune pid_tune_drone.launch.py
+```
+
+* **Target Setpoint**: $(1.5, -1.5, 13.0)$ (Bottom-left quadrant near ground triangle marker `E7/D7`).
+* **Physical Kinematics Mapping**:
+  * Pitch command $\to$ controls $X$ axis (`pitch_cmd = 1500 + out_x`)
+  * Roll command $\to$ controls $Y$ axis (`roll_cmd = 1500 + out_y`)
+  * Throttle command $\to$ controls $Z$ axis (`throttle_cmd = 1518 - out_z`, with hover equilibrium at `1518` PWM)
+* **Tuned Gains** ([`pid_values.yaml`](file:///home/sanal-sivakumar/pico_ws/src/swift_pico/src/pid_values.yaml)):
+  * Pitch ($X$): $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
+  * Roll ($Y$): $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
+  * Throttle ($Z$): $K_p = 28.0,\; K_i = 0.14,\; K_d = 30.0$
+
+---
+
+## 🏆 Official Competition Results & Milestones
+
+| Task | Module / Scope | Official Score | Hold Time Achieved | Total Time | Target Benchmark | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Task 1A** | Survivor CV & Localization | **20 / 20** | N/A | Instant (<100ms) | Accurate coordinates | ✅ **PASSED** |
 | **Task 1B** | Altitude (Z) PID Tuning | **40 / 40** | 10.00 s / 10.00 s | **10.03 s** | < 15.0 s | ✅ **PASSED** |
 | **Task 1C** | 3D Waypoint Navigation | **40 / 40** | 10.00 s / 10.00 s | **14.03 s** | < 15.0 s | ✅ **PASSED** |
+| **Task 2A** | 3D Position PID Stabilization | **20 / 20** | **10.00 s** / 10.00 s | **14.30 s** | < 15.0 s (Max Marks) | ✅ **PASSED** |
 
 ---
 

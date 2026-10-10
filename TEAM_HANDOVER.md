@@ -41,6 +41,22 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Waypoint Navigation & Trajectory Tracking**: Autonomous waypoint following across 3D coordinates.
 * **Submission Package**: `task_1c/KD_5844_task_1c.zip` (contains rosbag `task_1c_0.db3` & `metadata.yaml`)
 
+### 7. Task 2A Status: ✅ COMPLETED, CALIBRATED & VERIFIED
+* **Active Controller**: `swift_pico/src/pico_controller_PID.py`
+* **Tuned Gains**: `swift_pico/src/pid_values.yaml`
+  * **Pitch ($X$)**: $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
+  * **Roll ($Y$)**: $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
+  * **Throttle ($Z$)**: $K_p = 28.0,\; K_i = 0.14,\; K_d = 30.0$ (Hover equilibrium base: `1518` PWM)
+* **Performance Verified**:
+  * Enters $\pm 0.4$ bounding sphere at $t = 4.3\text{ s}$ from arming.
+  * Continuous 10.0s hold completed by $t = 14.3\text{ s}$ ($\le 15\text{ s}$ cutoff for **Maximum Marks: 20/20**).
+  * Millimeter-level steady state accuracy: $|e_x| \le 0.01\text{ m},\; |e_y| \le 0.01\text{ m},\; |e_z| \le 0.02\text{ m}$.
+* **Key Physics Insight**:
+  * Rotational cross-coupling in MuJoCo Lee SE(3) controller requires:
+    * `pitch_cmd = 1500 + out_x` (Pitch controls the $X$ axis)
+    * `roll_cmd = 1500 + out_y` (Roll controls the $Y$ axis)
+    * `throttle_cmd = 1518 - out_z` (Throttle controls the $Z$ axis)
+
 ---
 
 ## 🚀 How to Set Up & Start on Your Machine

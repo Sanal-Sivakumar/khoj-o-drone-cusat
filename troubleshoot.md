@@ -25,6 +25,9 @@ This document catalogs every error, environment conflict, and bug encountered du
 | `libmujoco.so.3.9.0: cannot open shared object file` | MuJoCo library path not registered in system dynamic linker (`ldconfig`) | [Issue 15](#issue-15-libmujocoso390-cannot-open-shared-object-file) |
 | Drone loses altitude (sags) when Pitch/Roll maneuvers start | Tilt angle redirects thrust vector ($T_z = T \cos\theta\cos\phi$) | [Issue 16](#issue-16-drone-loses-altitude-during-horizontal-maneuvers) |
 | ROS 2 Bag Submission Package Structure | Bag zip must contain `.db3` and `metadata.yaml` at root | [Issue 17](#issue-17-ros-2-bag-submission-package-structure) |
+| Drone flies sideways into arena wall / spirals away | Actuator cross-coupling: Pitch controls X, Roll controls Y | [Issue 18](#issue-18-actuator-cross-coupling--drone-flying-into-arena-walls) |
+| `AttributeError: _ARRAY_API not found` / NumPy 2.x crash | PyPI NumPy 2.2.6 incompatible with system-compiled Matplotlib 3.5.1 | [Issue 19](#issue-19-numpy-2x-binary-incompatibility-in-tuning-gui) |
+| Erratic jerky flight / Drone ignoring PID gains | Lingering zombie controller processes fighting over `/drone_command` | [Issue 20](#issue-20-zombie-processes-fighting-over-drone_command-topic) |
 
 ---
 
@@ -385,6 +388,63 @@ KD_5844_task_1c.zip
 #### Verification Command:
 ```bash
 unzip -l KD_5844_task_1c.zip
+```
+
+---
+
+### Issue 18: Actuator Cross-Coupling & Drone Flying into Arena Walls
+
+#### Symptom:
+When tuning Task 2A, the drone immediately slides sideways, accelerates into walls, or spirals out of the camera FOV, even when gains appear conservative.
+
+#### Cause:
+In the MuJoCo simulation's Lee SE(3) geometric attitude controller (`rotors_control`), rotation about the airframe's $X$ axis is **Roll**, which induces lateral tilt accelerating the drone along the **$Y$ axis**. Rotation about the $Y$ axis is **Pitch**, accelerating the drone along the **$X$ axis**. Mapping Roll $\to X$ and Pitch $\to Y$ creates a 90-degree cross-coupled positive feedback runaway.
+
+#### Fix:
+Use the decoupled physical kinematics mapping in [`pico_controller_PID.py`](file:///home/sanal-sivakumar/pico_ws/src/swift_pico/src/pico_controller_PID.py):
+```python
+pitch_cmd    = 1500 + int(out_x)   # Pitch controls X axis (+ pitch -> +X)
+roll_cmd     = 1500 + int(out_y)   # Roll controls Y axis (+ roll -> +Y)
+throttle_cmd = 1518 - int(out_z)   # Throttle controls Z with 1518 hover base
+```
+
+---
+
+### Issue 19: NumPy 2.x Binary Incompatibility in Tuning GUI
+
+#### Symptom:
+Launching `ros2 launch pid_tune pid_tune_drone.launch.py` crashes immediately with:
+```text
+AttributeError: _ARRAY_API not found
+ImportError: numpy.core.multiarray failed to import
+```
+
+#### Cause:
+A pip package had installed NumPy 2.2.6 into `/usr/local/lib/python3.10/dist-packages/`, which broke C-extensions in system libraries compiled against NumPy 1.x (such as Matplotlib 3.5.1 in Ubuntu 22.04).
+
+#### Fix:
+Uninstall the conflicting pip package so Python reverts to the system-compiled `python3-numpy 1.21.5`:
+```bash
+docker exec ros2_humble pip uninstall -y numpy
+```
+
+---
+
+### Issue 20: Zombie Processes Fighting Over `/drone_command` Topic
+
+#### Symptom:
+Drone behaves erratically, ignores new PID values, or twitches aggressively between two sets of commands.
+
+#### Cause:
+Previous ROS 2 launch processes or background Python controller scripts remained running in the background when an earlier terminal window was closed without a clean SIGINT. Multiple nodes publish conflicting commands to `/drone_command` simultaneously.
+
+#### Fix:
+Run a clean sweep before starting any flight test:
+```bash
+pkill -9 -f mujoco_bridge
+pkill -9 -f pico_controller
+pkill -9 -f whycode_node
+pkill -9 -f pid_tune
 ```
 
 
