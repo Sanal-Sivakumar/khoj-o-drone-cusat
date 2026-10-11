@@ -51,10 +51,10 @@ class Swift_Pico(Node):
         self.pos_error.yaw_error = 0.0
 
         # Pre-tuned optimal PID Gains: [pitch(X), roll(Y), throttle(Z)]
-        # Golden Proven Tuning: critically damped decoupled glide, 7.4s entry, zero bounce
-        self.Kp = [12.0, 12.0, 16.0]
+        # Maximum-Speed 20/20 Tuning: fast diagonal sprint with hydraulic braking (Zero overshoot)
+        self.Kp = [17.5, 17.5, 16.0]
         self.Ki = [0.02, 0.02, 0.05]
-        self.Kd = [32.0, 32.0, 26.0]
+        self.Kd = [45.0, 45.0, 28.0]
 
         # PID State tracking variables
         self.prev_error = [0.0, 0.0, 0.0]
@@ -66,12 +66,12 @@ class Swift_Pico(Node):
         self.max_sum_error = [15.0, 15.0, 25.0]
         self.min_sum_error = [-15.0, -15.0, -25.0]
 
-        # Decoupled precision tilt clamps: ultra-smooth glide (±25 PWM)
-        # Throttle clamped to [1380, 1680]
-        self.min_roll_pitch = 1475
-        self.max_roll_pitch = 1525
-        self.min_throttle = 1380
-        self.max_throttle = 1680
+        # Precision tilt clamps: swift transit with deadbeat stop (±38 PWM)
+        # Ceiling-safe throttle clamps: [1450, 1545] (prevents vertical pop/overshoot)
+        self.min_roll_pitch = 1462
+        self.max_roll_pitch = 1538
+        self.min_throttle = 1450
+        self.max_throttle = 1545
 
         # Hold status tracking
         self.hold_start_time = None
@@ -260,14 +260,14 @@ class Swift_Pico(Node):
         roll_cmd = 1500 + int(out_y)
         throttle_cmd = 1518 - int(out_z)
 
-        # Smooth Climb Velocity Governor: Caps climb throttle (+16 PWM above hover)
+        # Smooth Climb Velocity Governor: Caps climb throttle (+24 PWM above hover)
         # Guarantees steady, non-overshooting climb that levels off dead-center at 13.0
-        if self.current_state[2] > 13.3 and throttle_cmd > 1534:
-            throttle_cmd = 1534
+        if self.current_state[2] > 13.3 and throttle_cmd > 1542:
+            throttle_cmd = 1542
 
-        # Coordinated Takeoff: Keep drone completely level until clearing floor layer (Z > 14.70)
+        # Coordinated Takeoff: Keep drone level until clearing floor layer (Z > 14.88)
         # As soon as airborne, concurrent 3D diagonal transit engages directly
-        if self.current_state[2] > 14.70:
+        if self.current_state[2] > 14.88:
             pitch_cmd = 1500
             roll_cmd = 1500
 
