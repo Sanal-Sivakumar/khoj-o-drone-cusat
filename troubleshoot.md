@@ -23,6 +23,8 @@ This document catalogs every error, environment conflict, and bug encountered du
 | `Package 'image_view' not found` | `ros-humble-image-view` package missing inside Docker container | [Issue 13](#issue-13-package-image_view-not-found) |
 | `libactuator_msgs__rosidl_typesupport_cpp.so: cannot open shared object file` | Missing `ros-humble-actuator-msgs` shared library | [Issue 14](#issue-14-libactuator_msgs__rosidl_typesupport_cppso-cannot-open-shared-object-file) |
 | `libmujoco.so.3.9.0: cannot open shared object file` | MuJoCo library path not registered in system dynamic linker (`ldconfig`) | [Issue 15](#issue-15-libmujocoso390-cannot-open-shared-object-file) |
+| Drone loses altitude (sags) when Pitch/Roll maneuvers start | Tilt angle redirects thrust vector ($T_z = T \cos\theta\cos\phi$) | [Issue 16](#issue-16-drone-loses-altitude-during-horizontal-maneuvers) |
+| ROS 2 Bag Submission Package Structure | Bag zip must contain `.db3` and `metadata.yaml` at root | [Issue 17](#issue-17-ros-2-bag-submission-package-structure) |
 
 ---
 
@@ -346,6 +348,45 @@ apt update && apt install -y libglfw3 libglfw3-dev
 # 3. Launch simulation
 ros2 launch swift_pico swift_pico_simulation.launch.py
 ```
+
+---
+
+### Issue 16: Drone Loses Altitude During Horizontal Maneuvers
+
+#### Symptom:
+The drone holds altitude stably during Task 1B, but in Task 1C, as soon as pitch or roll commands are issued to move horizontally, the drone sags, descends, or strikes the ground.
+
+#### Cause:
+When a quadrotor tilts by pitch angle $\theta$ and roll angle $\phi$, total rotor thrust $\mathbf{T}$ is split into horizontal and vertical components. The effective vertical lift becomes $T_z = T \cos\theta \cos\phi$. Because $\cos\theta < 1$ and $\cos\phi < 1$, vertical lift decreases with any tilt angle.
+
+#### Fix:
+1. **Co-tune Throttle alongside Pitch/Roll**:
+   Do not leave Task 1B throttle gains completely untouched. Increase $K_p^{(z)}$ or introduce a small $K_i^{(z)}$ to compensate dynamically for lift loss during translational acceleration.
+2. **Limit Maximum Tilt Angles**:
+   Ensure pitch and roll commands are clamped so the drone never tilts beyond $\pm 15^\circ \dots 20^\circ$, avoiding catastrophic loss of vertical lift.
+
+---
+
+### Issue 17: ROS 2 Bag Submission Package Structure
+
+#### Symptom:
+e-Yantra evaluator rejects `KD_5844_task_1b.zip` or `KD_5844_task_1c.zip` with "Invalid Bag Directory Structure".
+
+#### Cause:
+The zip archive contained an extra nested directory level (e.g. `KD_5844_task_1c/metadata.yaml`) rather than having the bag database and metadata file directly at the root of the archive.
+
+#### Proper Archive Structure:
+```text
+KD_5844_task_1c.zip
+├── metadata.yaml
+└── task_1c_0.db3
+```
+
+#### Verification Command:
+```bash
+unzip -l KD_5844_task_1c.zip
+```
+
 
 
 
