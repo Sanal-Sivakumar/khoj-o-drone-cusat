@@ -1,15 +1,15 @@
 pitch_pid:
   ros__parameters:
-    Kp: 10.5
-    Ki: 0.04
-    Kd: 33.5
+    Kp: 12.0
+    Ki: 0.02
+    Kd: 32.0
 roll_pid:
   ros__parameters:
-    Kp: 10.5
-    Ki: 0.04
-    Kd: 33.5
+    Kp: 12.0
+    Ki: 0.02
+    Kd: 32.0
 throttle_pid:
   ros__parameters:
-    Kp: 28.0
-    Ki: 0.14
-    Kd: 30.0
+    Kp: 16.0
+    Ki: 0.05
+    Kd: 26.0

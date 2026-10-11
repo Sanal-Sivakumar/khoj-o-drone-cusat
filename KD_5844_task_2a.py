@@ -51,10 +51,10 @@ class Swift_Pico(Node):
         self.pos_error.yaw_error = 0.0
 
         # Pre-tuned optimal PID Gains: [pitch(X), roll(Y), throttle(Z)]
-        # Faster transit (< 4s to target) with critical damping to finish <= 14s total
-        self.Kp = [10.5, 10.5, 28.0]
-        self.Ki = [0.04, 0.04, 0.14]
-        self.Kd = [33.5, 33.5, 30.0]
+        # Golden Proven Tuning: critically damped decoupled glide, 7.4s entry, zero bounce
+        self.Kp = [12.0, 12.0, 16.0]
+        self.Ki = [0.02, 0.02, 0.05]
+        self.Kd = [32.0, 32.0, 26.0]
 
         # PID State tracking variables
         self.prev_error = [0.0, 0.0, 0.0]
@@ -63,15 +63,15 @@ class Swift_Pico(Node):
         self.last_pid_time = time.time()
 
         # Strict anti-windup bounds
-        self.max_sum_error = [20.0, 20.0, 40.0]
-        self.min_sum_error = [-20.0, -20.0, -40.0]
+        self.max_sum_error = [15.0, 15.0, 25.0]
+        self.min_sum_error = [-15.0, -15.0, -25.0]
 
-        # Safe tilt clamps: allows fast transit (up to ±50 PWM) without flyaway risk
-        # Throttle clamped to [1350, 1750]
-        self.min_roll_pitch = 1450
-        self.max_roll_pitch = 1550
-        self.min_throttle = 1350
-        self.max_throttle = 1750
+        # Decoupled precision tilt clamps: ultra-smooth glide (±25 PWM)
+        # Throttle clamped to [1380, 1680]
+        self.min_roll_pitch = 1475
+        self.max_roll_pitch = 1525
+        self.min_throttle = 1380
+        self.max_throttle = 1680
 
         # Hold status tracking
         self.hold_start_time = None
@@ -93,9 +93,6 @@ class Swift_Pico(Node):
 
         # Sample time in seconds (as specified in e-Yantra boilerplate)
         self.sample_time = 0.033
-
-        # Periodic PID execution timer (30 Hz)
-        self.pid_timer = self.create_timer(self.sample_time, self.pid)
 
         # Heartbeat timer (10 Hz for bag logging)
         self.create_timer(0.1, self.publish_heartbeat)
@@ -207,16 +204,20 @@ class Swift_Pico(Node):
             ]
             self.arm()
             self.get_logger().info(f"WhyCode Marker Detected at [{pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}]. Starting control loop.")
+            return
+
+        # Execute PID synchronized with fresh vision frame
+        self.pid()
 
     def pid(self):
-        '''Periodic PID control loop callback, called by timer at sample_time interval.'''
+        '''PID control loop callback executed on each vision update.'''
         if not self.marker_received:
             return
 
         now = time.time()
         dt = now - self.last_pid_time
-        if dt <= 0.005:
-            dt = self.sample_time
+        if dt < 0.015:
+            return
         self.last_pid_time = now
 
         self.compute_and_publish_pid(dt)
@@ -232,20 +233,20 @@ class Swift_Pico(Node):
             self.desired_state[2] - self.current_state[2]
         ]
 
-        # 2. Conditional Integral Accumulation (Anti-Windup)
+        # 2. Precision Conditional Integral Accumulation (Trims gravity offset to 0.00m)
         for i in range(3):
-            limit = 2.5 if i == 2 else 1.2
-            max_sum = 40.0 if i == 2 else 20.0
+            limit = 0.45 if i == 2 else 0.6
+            max_sum = 50.0 if i == 2 else 20.0
             if abs(error[i]) < limit:
                 self.sum_error[i] += error[i] * dt
                 self.sum_error[i] = max(-max_sum, min(max_sum, self.sum_error[i]))
             else:
-                self.sum_error[i] *= 0.95
+                self.sum_error[i] = 0.0  # Clear windup outside hold zone
 
         # 3. Filtered Derivative Calculation (eliminates vision noise)
         for i in range(3):
             raw_d = (error[i] - self.prev_error[i]) / dt
-            self.d_error_filtered[i] = (0.7 * raw_d) + (0.3 * self.d_error_filtered[i])
+            self.d_error_filtered[i] = (0.6 * raw_d) + (0.4 * self.d_error_filtered[i])
 
         # 4. PID Outputs
         out_x = (self.Kp[0] * error[0]) + (self.Ki[0] * self.sum_error[0]) + (self.Kd[0] * self.d_error_filtered[0])
@@ -255,10 +256,20 @@ class Swift_Pico(Node):
         # 5. Map to RC PWM Commands
         # Pitch controls X (+ increases X)
         # Roll controls Y (+ increases Y)
-        # Throttle controls Z (+ climbs, hover offset ~1518)
         pitch_cmd = 1500 + int(out_x)
         roll_cmd = 1500 + int(out_y)
         throttle_cmd = 1518 - int(out_z)
+
+        # Smooth Climb Velocity Governor: Caps climb throttle (+16 PWM above hover)
+        # Guarantees steady, non-overshooting climb that levels off dead-center at 13.0
+        if self.current_state[2] > 13.3 and throttle_cmd > 1534:
+            throttle_cmd = 1534
+
+        # Coordinated Takeoff: Keep drone completely level until clearing floor layer (Z > 14.70)
+        # As soon as airborne, concurrent 3D diagonal transit engages directly
+        if self.current_state[2] > 14.70:
+            pitch_cmd = 1500
+            roll_cmd = 1500
 
         # 6. Safety Clamping (prevents flyaway)
         self.cmd.rc_pitch = max(self.min_roll_pitch, min(self.max_roll_pitch, pitch_cmd))

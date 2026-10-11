@@ -25,7 +25,7 @@ def main():
     cleanup_all()
 
     env = os.environ.copy()
-    
+    env['DISPLAY'] = ':0'
     print("\n[TEST] 1. Launching MuJoCo Simulation...")
     sim_cmd = [
         "bash", "-c",
@@ -53,6 +53,10 @@ def main():
             line = ctrl_proc.stdout.readline()
             if line:
                 print(line.rstrip())
+                if "SUCCESS: Target" in line:
+                    print("\n[TEST] >>> Verified 10-Second Hold! Completing verification run... <<<\n")
+                    time.sleep(2.0)
+                    break
             else:
                 time.sleep(0.05)
     except KeyboardInterrupt:
