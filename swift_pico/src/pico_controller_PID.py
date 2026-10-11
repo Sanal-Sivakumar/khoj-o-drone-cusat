@@ -40,7 +40,7 @@ class Swift_Pico(Node):
 
 		# This corresponds to the setpoint you want the drone to reach or hold
 		# [x_desired_state, y_desired_state, z_desired_state]
-		self.desired_state = [1.0, -1.0, 13.0]  # whycode marker at the position of the drone given in the scene. Make the whycode marker associated with position_to_hold drone renderable and make changes accordingly
+		self.desired_state = [1.5, -1.5, 13.0]  # whycode marker at the position of the drone given in the scene. Make the whycode marker associated with position_to_hold drone renderable and make changes accordingly
 
 
 
@@ -55,13 +55,21 @@ class Swift_Pico(Node):
 		#initial setting of Kp, Kd and ki for [roll, pitch, throttle]. eg: self.Kp[2] corresponds to Kp value in throttle axis
 		#after tuning and computing corresponding PID parameters, change the parameters
 
-		self.Kp = [0, 0, 0]
-		self.Ki = [0, 0, 0]
-		self.Kd = [0, 0, 0]
+		self.Kp = [8, 8, 40]
+		self.Ki = [0, 0, 0.0]
+		self.Kd = [150, 150, 400]
 
 		#-----------------------Add other required variables for pid here ----------------------------------------------
-
-
+		self.pos_error = Error()
+		self.error = [0.0, 0.0, 0.0]
+		self.prev_error = [0.0, 0.0, 0.0]
+		self.error_sum = [0.0, 0.0, 0.0]
+		self.min_values = [1000, 1000, 1000]
+		self.max_values = [2000, 2000, 2000]
+		self.d_filt = [0.0, 0.0, 0.0]
+		self.alpha = 0.3
+		self.first_run = True
+		
 
 
 
@@ -88,7 +96,9 @@ class Swift_Pico(Node):
 
 		# Subscribing to /whycode_node/markers, /throttle_pid, /pitch_pid, roll_pid
 		self.create_subscription(MarkerArray, '/whycode_node/markers', self.whycode_callback, 1)
-		self.create_subscription(PIDTune, "/throttle_pid", self.altitude_set_pid, 1)
+		#self.create_subscription(PIDTune, "/throttle_pid", self.altitude_set_pid, 1)
+		#self.create_subscription(PIDTune, "/pitch_pid", self.pitch_set_pid, 1)
+		#self.create_subscription(PIDTune, "/roll_pid", self.roll_set_pid, 1)
 
 		#------------------------Add other ROS Subscribers here-----------------------------------------------------
 
@@ -97,7 +107,7 @@ class Swift_Pico(Node):
 
 		time.sleep(0.5)  # let the heartbeat reach the rosbag before arming
 		self.arm()  # ARMING THE DRONE
-
+		self.create_timer(self.sample_time, self.pid)
 		# Creating a timer to run the pid function periodically, refer ROS 2 tutorials on how to create a publisher subscriber(Python)
 
 
@@ -130,6 +140,8 @@ class Swift_Pico(Node):
 	# The function gets executed each time when /whycode_node publishes /whycode_node/markers
 	def whycode_callback(self, msg):
 		self.current_state[0] = msg.markers[0].position.position.x
+		self.current_state[1] = msg.markers[0].position.position.y
+		self.current_state[2] = msg.markers[0].position.position.z
 		#--------------------Set the remaining co-ordinates of the drone from msg----------------------------------------------
 
 
@@ -141,9 +153,17 @@ class Swift_Pico(Node):
 	# Callback function for /throttle_pid
 	# This function gets executed each time when /drone_pid_tuner publishes /throttle_pid
 	def altitude_set_pid(self, alt):
-		self.Kp[2] = alt.kp * 0.03  # This is just for an example. You can change the ratio/fraction value accordingly
-		self.Ki[2] = alt.ki * 0.008
-		self.Kd[2] = alt.kd * 0.6
+		self.Kp[2] = alt.kp  # This is just for an example. You can change the ratio/fraction value accordingly
+		self.Ki[2] = alt.ki
+		self.Kd[2] = alt.kd
+	def pitch_set_pid(self, pitch):
+		self.Kp[0] = pitch.kp
+		self.Ki[0] = pitch.ki
+		self.Kd[0] = pitch.kd
+	def roll_set_pid(self, roll):
+		self.Kp[1] = roll.kp
+		self.Ki[1] = roll.ki
+		self.Kd[1] = roll.kd
 
 	#----------------------------Define callback function like altitide_set_pid to tune pitch, roll--------------
 
@@ -163,9 +183,39 @@ class Swift_Pico(Node):
 	#																														self.cmd.rcPitch = self.max_values[1]
 	#	7. Update previous errors.eg: self.prev_error[1] = error[1] where index 1 corresponds to that of pitch (eg)
 	#	8. Add error_sum
+		for ax in range(3):
+    			self.error[ax] = self.desired_state[ax] - self.current_state[ax]
 
+		if self.first_run:
+			self.prev_error = list(self.error)
+			self.first_run = False
 
+		for ax in range(3):
+			self.d_filt[ax] = self.alpha * (self.error[ax] - self.prev_error[ax]) + (1 - self.alpha) * self.d_filt[ax]
+			self.error_sum[ax] = max(-200.0, min(200.0, self.error_sum[ax] + self.error[ax]))
+			out = self.Kp[ax] * self.error[ax] + self.Ki[ax] * self.error_sum[ax] + self.Kd[ax] * self.d_filt[ax]
+			self.prev_error[ax] = self.error[ax]
+			if ax == 0:
+				self.cmd.rc_pitch = int(max(self.min_values[ax], min(self.max_values[ax], 1500 + out)))
+			elif ax == 1:
+				self.cmd.rc_roll = int(max(self.min_values[ax], min(self.max_values[ax], 1500 + out)))
+			else:
+				self.cmd.rc_throttle = int(max(self.min_values[ax], min(self.max_values[ax], 1518 - out)))
 
+		self.pos_error.pitch_error = self.error[0]
+		self.pos_error.roll_error = self.error[1]
+		self.pos_error.throttle_error = self.error[2]
+		for ax in (0, 1):
+			self.error_sum[ax] = max(-200.0, min(200.0, self.error_sum[ax] + self.error[ax]))
+			out = (self.Kp[ax] * self.error[ax]
+				+ self.Ki[ax] * self.error_sum[ax]
+				+ self.Kd[ax] * (self.error[ax] - self.prev_error[ax]))
+			self.prev_error[ax] = self.error[ax]
+			cmd = int(max(self.min_values[ax], min(self.max_values[ax], 1500 + out)))
+			if ax == 0:
+				self.cmd.rc_pitch = cmd
+			else:
+				self.cmd.rc_roll = cmd
 
 
 
