@@ -63,7 +63,7 @@ class WayPointServer(Node):
         # Optimal High-Speed Gains: [pitch(X), roll(Y), throttle(Z)]
         self.Kp = [22.0, 22.0, 22.0]
         self.Ki = [0.02, 0.02, 0.06]
-        self.Kd = [45.0, 45.0, 32.0]
+        self.Kd = [50.0, 50.0, 32.0]
 
         # PID tracking state
         self.prev_error = [0.0, 0.0, 0.0]
@@ -186,7 +186,7 @@ class WayPointServer(Node):
         # 3. Filtered Derivative Calculation
         for i in range(3):
             raw_d = (error[i] - self.prev_error[i]) / dt
-            self.d_error_filtered[i] = (0.70 * raw_d) + (0.30 * self.d_error_filtered[i])
+            self.d_error_filtered[i] = (0.75 * raw_d) + (0.25 * self.d_error_filtered[i])
 
         # 4. PID Outputs
         out_x = (self.Kp[0] * error[0]) + (self.Ki[0] * self.sum_error[0]) + (self.Kd[0] * self.d_error_filtered[0])
