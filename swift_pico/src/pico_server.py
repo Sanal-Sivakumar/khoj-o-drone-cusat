@@ -175,7 +175,7 @@ class WayPointServer(Node):
 
         # 2. Precision Conditional Integral Accumulation
         for i in range(3):
-            limit = 0.35 if i == 2 else 0.45
+            limit = 0.45
             max_sum = 25.0 if i == 2 else 15.0
             if abs(error[i]) < limit:
                 self.sum_error[i] += error[i] * dt
@@ -198,8 +198,8 @@ class WayPointServer(Node):
         roll_cmd = 1500 + int(out_y)
         throttle_cmd = 1518 - int(out_z)
 
-        # Smooth Climb Velocity Governor (takeoff altitude limiter)
-        if self.curr_state[2] > 13.3 and throttle_cmd > 1542:
+        # Ground Liftoff Governor: prevents rocketing upward only while on the floor (Z > 14.2)
+        if self.curr_state[2] > 14.2 and throttle_cmd > 1542:
             throttle_cmd = 1542
 
         # Active Pitch-Up Decoupling: prevents climbing above 12.80 when braking
@@ -289,6 +289,7 @@ class WayPointServer(Node):
                 if point_in_sphere_start_time is not None:
                     self.get_logger().warn(f'⚠️ Drifted out of sphere after {now - point_in_sphere_start_time:.2f}s. Resetting hold timer.')
                     point_in_sphere_start_time = None
+                    max_time_inside_sphere = 0.0
 
         goal_handle.succeed()
 
