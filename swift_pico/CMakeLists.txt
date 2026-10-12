@@ -20,6 +20,7 @@ find_package(controller_msg     REQUIRED)  # PID Tuning msg
 find_package(error_msg          REQUIRED)  # Error visualization msg
 find_package(whycode_interfaces REQUIRED)  # WhyCode interfaces
 find_package(std_msgs           REQUIRED)  # Header, for /controller_heartbeat
+find_package(waypoint_navigation REQUIRED)
 
 # --- mujoco_bridge (pre-built executable) ------------------------------------
 # Both files live in config/. The binary has RPATH=$ORIGIN, so libmujoco must be
@@ -74,7 +75,26 @@ install(
     src/pico_controller_PID.py
     src/pico_controller_LQR.py
     src/pico_server.py
+    src/pico_client.py
+    src/waypoint_service.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Also install aliases without .py extension so `ros2 run swift_pico <node>` works
+install(
+  PROGRAMS src/pico_server.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME pico_server
+)
+install(
+  PROGRAMS src/pico_client.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME pico_client
+)
+install(
+  PROGRAMS src/waypoint_service.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME waypoint_service
 )
 
 ament_package()
