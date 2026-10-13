@@ -15,6 +15,8 @@ Welcome to the comprehensive technical documentation for **Khoj-o-Drone**. This 
 5. [MuJoCo Physics Simulation Engine](#5-mujoco-physics-simulation-engine)
 6. [Task 1B: Altitude (Z-Axis) PID Flight Control](#6-task-1b-altitude-z-axis-pid-flight-control)
 7. [Task 1C: Multi-Axis (X, Y) Position Hold & Waypoint Navigation](#7-task-1c-multi-axis-x-y-position-hold--waypoint-navigation)
+8. [Task 2A: Autonomous 3D Position PID Control Loop](#8-task-2a-autonomous-3d-position-pid-control-loop)
+9. [Tasks 2B and 2C: Waypoint Service, Action Client/Server and Vision Planner](#9-tasks-2b-and-2c-waypoint-service-action-clientserver-and-vision-planner)
 
 ---
 
@@ -370,12 +372,17 @@ $$\dot{e}_{\text{filt}}(t) = 0.7 \cdot \frac{e(t) - e(t-\Delta t)}{\Delta t} + 0
 Integral accumulation is conditionally gated within a capture window ($|e_{x,y}| < 1.2\text{ m}$, $|e_z| < 2.5\text{ m}$) with saturation bounds to prevent windup during initial transit.
 
 ### 4. Optimal Tuned Parameters & Performance Benchmark
-* **Pitch ($X$-axis)**: $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
-* **Roll ($Y$-axis)**: $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
-* **Throttle ($Z$-axis)**: $K_p = 28.0,\; K_i = 0.14,\; K_d = 30.0$
-* **Transit Time**: Enters $\pm 0.4\text{ m}$ sphere at $t = 4.3\text{ s}$.
-* **Hold Duration**: Sustained $\ge 10.0\text{ s}$ continuous hold, completing task at $t = 14.3\text{ s}$ ($\le 15.0\text{ s}$ limit for **Maximum Marks: 20/20**).
-* **Steady-State Residuals**: $|e_x| \le 0.01\text{ m},\; |e_y| \le 0.01\text{ m},\; |e_z| \le 0.02\text{ m}$.
+**Submitted (verified from the recorded bag):**
+* **Pitch ($X$-axis)**: $K_p = 17.5,\; K_i = 0.02,\; K_d = 45.0$
+* **Roll ($Y$-axis)**: $K_p = 17.5,\; K_i = 0.02,\; K_d = 45.0$
+* **Throttle ($Z$-axis)**: $K_p = 16.0,\; K_i = 0.05,\; K_d = 28.0$
+* **Transit Time**: Enters the $\pm 0.4\text{ m}$ sphere at $t = 7.70\text{ s}$.
+* **Hold Duration**: $10\text{ s}$ hold completed at $t = 17.70\text{ s}$ (portal). Score $19.00/20$; the $15\text{ s}$ limit for full speed marks was missed.
+* **Steady-State Residuals**: maximum error over the flight $4.7\text{ mm}$.
+
+**Diagnosis:** the response is *overdamped*. The derivative-to-proportional ratio $K_d/K_p \approx 2.6$ is high, so the drone creeps toward the setpoint instead of overshooting. Lowering $K_d/K_p$ towards $\approx 3$ at a lower absolute $K_p$ with a stronger $Z$ loop shortens the approach.
+
+**Candidate (UNVERIFIED, never flown on the sim):** X/Y $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$; Z $K_p = 28,\; K_i = 0.14,\; K_d = 30$. Earlier notes claiming it enters the sphere at $4.3\text{ s}$ and finishes at $14.3\text{ s}$ were predictions, not measurements, and have been removed. Test it on the sim and record a bag before relying on it.
 
 ### 5. Official Boilerplate API Alignment & Periodic Timer Loop
 To ensure 100% compliance with e-Yantra's automated evaluation harness and grading scripts:
@@ -385,5 +392,25 @@ To ensure 100% compliance with e-Yantra's automated evaluation harness and gradi
   - `whycode_callback(msg)` strictly handles pose extraction, timestamp updating, and first-frame arming.
   - `pid()` serves as the uniform timer and external entrypoint, calculating $\Delta t$, calling `compute_and_publish_pid(dt)`, publishing `/drone_command` and `/pos_error`, and evaluating the 10-second hold criterion.
 
+---
 
+## 9. Tasks 2B and 2C: Waypoint Service, Action Client/Server and Vision Planner
 
+### 1. Task 2B architecture
+`waypoint_service` answers `GetWaypoints` (`bool get_waypoints` -> `PoseArray waypoints`, `string[] marker_ids`). `pico_client` requests the list, then sends each point to the `waypoint_navigation` action server as a `NavToWaypoint` goal, starting the next goal from the result callback. `pico_server` flies to the goal and **holds every goal for 3 s**; it ignores the `hover` flag. The 4-waypoint run took 37.19 s.
+
+### 2. Task 2C: from one image to a route
+1. **Receive one frame** from `/image_raw` (QoS: RELIABLE, TRANSIENT_LOCAL, depth 1). The message is converted to a BGR array by hand (mono8/rgb8/bgr8/rgba8/bgra8, honouring row padding), so the node never touches `cv_bridge` and the NumPy ABI problem in troubleshoot Issue 19 cannot occur.
+2. **Detect**: the Task 1A pipeline (ArUco corners -> 900x900 rectification -> HSV mask -> contour area filter -> centroid moments -> nearest of the 121 intersections). Only **red (critical)** regions are kept.
+3. **Look up coordinates** in `grid_whycode_coordinates.csv` (or the JSON fallback), searched via `KD_GRID_FILE`, next to the script, then the workspace `scripts/` folder.
+4. **Plan** the order: with $n \le 8$ stops, every permutation is scored and the cheapest taken (4 survivors -> 24 orders); beyond that, nearest neighbour. Leg cost is the Chebyshev distance $\max(|\Delta x|, |\Delta y|)$, from the start F6.
+5. **Serve**: the subscription is destroyed after the first successful frame; the service call waits (up to 90 s) until the route is ready, then returns the waypoints (Z = 13) and the intersection names as `marker_ids`.
+
+### 3. Why Chebyshev cost and a survivors-only route
+The 2B bag showed leg time of about $4.0\text{ s} + 0.51\text{ s/m}\times\max(|\Delta x|,|\Delta y|)$, because pitch and roll commands are clamped independently, so a diagonal move is no faster than the larger axis alone. Since the unchanged server holds $3\text{ s}$ at *every* goal, intermediate (obstacle-avoiding) waypoints would each cost an extra hold, so the route contains survivors only. The arena has only flat markers and no physical obstacles in the simulator model.
+
+### 4. Estimated timing (not measured)
+About $4$ survivors $\times(4.0 + 3.0)\text{ s}$ plus travel gives roughly $40\text{ s}$ against the $60\text{ s}$ bonus limit, extrapolated from the 2B bag. Confirm on the sim.
+
+### 5. Verification status
+Verified offline with stubbed ROS: grid parsing, detection on `image_1.jpg` (critical B7, C10, I2), planner, image conversion, and the service reply. **Not verified:** the live ROS node, the simulator camera frame (lighting, orientation), and the final bag.

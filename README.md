@@ -71,10 +71,12 @@ pico_ws/
     │   │   ├── KD_5844_task1a.py      # Official Task 1A submission script (Team 5844)
     │   │   ├── KD_5844.zip           # Submission ZIP package
     │   │   └── image_1.jpg           # Sample disaster zone survey photograph
-    │   ├── src/                      # Flight controllers (Task 1B, 1C)
+    │   ├── src/                      # Flight controllers (1B, 1C, 2A) + waypoint_service.py (2C)
     │   ├── launch/                   # ROS 2 simulation launch files
     │   └── config/                   # Simulation parameters and bridge configs
     │
+    ├── task_2b/                      # Task 2B submission files + bag
+    ├── task_2c/                      # Task 2C service, client, server (bag pending)
     ├── rotors_simulator/             # Multi-rotor simulation models & controllers
     ├── controller_tuner/             # Dynamic PID tuning utilities & GUIs
     ├── whycode-ros2/                 # Localization fiducial tracking system
@@ -202,11 +204,34 @@ ros2 launch pid_tune pid_tune_drone.launch.py
   * Pitch command $\to$ controls $X$ axis (`pitch_cmd = 1500 + out_x`)
   * Roll command $\to$ controls $Y$ axis (`roll_cmd = 1500 + out_y`)
   * Throttle command $\to$ controls $Z$ axis (`throttle_cmd = 1518 - out_z`, with hover equilibrium at `1518` PWM)
-* **Tuned Gains** ([`pid_values.yaml`](file:///home/sanal-sivakumar/pico_ws/src/swift_pico/src/pid_values.yaml)):
-  * Pitch ($X$): $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
-  * Roll ($Y$): $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$
-  * Throttle ($Z$): $K_p = 28.0,\; K_i = 0.14,\; K_d = 30.0$
+* **Submitted Gains** (verified, [`pid_values.yaml`](./swift_pico/src/pid_values.yaml)):
+  * Pitch ($X$): $K_p = 17.5,\; K_i = 0.02,\; K_d = 45.0$
+  * Roll ($Y$): $K_p = 17.5,\; K_i = 0.02,\; K_d = 45.0$
+  * Throttle ($Z$): $K_p = 16.0,\; K_i = 0.05,\; K_d = 28.0$
+* **Faster candidate (not yet verified on the sim)**: X/Y $10.5 / 0.04 / 33.5$, Z $28 / 0.14 / 30$. The submitted set is overdamped (stabilized at $17.70\text{ s}$ vs the $15\text{ s}$ target).
 
+---
+
+## 🗺️ Task 2B: Waypoint Service + Action Client/Server
+
+Three nodes: `waypoint_service` (serves `GetWaypoints` on `waypoints`), `pico_client` (fetches the waypoints and sends them one by one) and `pico_server` (`NavToWaypoint` action on `waypoint_navigation`, holds each goal for $3\text{ s}$). Final files are in `task_2b/`; the 4-waypoint mission ran in $37.19\text{ s}$ (40/40).
+
+---
+
+## 🔴 Task 2C: Vision-Based Waypoint Service
+
+The 2C service replaces the hardcoded waypoints with a route computed from one `/image_raw` frame: it detects the **critical (red)** survivors with the Task 1A pipeline, looks up each intersection's coordinates in the official grid table, and plans a short route starting at F6. The 2B client and server are unchanged.
+
+```bash
+# Terminal 1: simulation stack (as in 2A/2B)
+# Terminal 2: waypoint service (reads one image, then serves the route)
+python3 task_2c/KD_5844_waypoint_service.py
+# Terminal 3 / 4: server and client (unchanged from 2B)
+python3 task_2c/KD_5844_pico_server.py
+python3 task_2c/KD_5844_pico_client.py
+```
+
+**Status**: implemented and tested offline only. It has not been flown on the simulator, and no 2C rosbag exists yet. See `TEAM_HANDOVER.md` section 9 for the remaining steps and `technical_details.md` section 9 for the design.
 ---
 
 ## 🏆 Official Competition Results & Milestones
@@ -216,7 +241,9 @@ ros2 launch pid_tune pid_tune_drone.launch.py
 | **Task 1A** | Survivor CV & Localization | **20 / 20** | N/A | Instant (<100ms) | Accurate coordinates | ✅ **PASSED** |
 | **Task 1B** | Altitude (Z) PID Tuning | **40 / 40** | 10.00 s / 10.00 s | **10.03 s** | < 15.0 s | ✅ **PASSED** |
 | **Task 1C** | 3D Waypoint Navigation | **40 / 40** | 10.00 s / 10.00 s | **14.03 s** | < 15.0 s | ✅ **PASSED** |
-| **Task 2A** | 3D Position PID Stabilization | **20 / 20** | **10.00 s** / 10.00 s | **14.30 s** | < 15.0 s (Max Marks) | ✅ **PASSED** |
+| **Task 2A** | 3D Position PID Stabilization | **19.00 / 20** | **10.00 s** / 10.00 s | **17.70 s** | < 15.0 s (Max Marks) | ⚠️ **PASSED, speed marks lost** |
+| **Task 2B** | Waypoint Service + Action Client/Server | **40 / 40** | 3.00 s per waypoint | **37.19 s** | 4 waypoints | ✅ **PASSED** |
+| **Task 2C** | Vision-Based Waypoint Service | Pending | N/A | Pending (estimate ~40 s, unmeasured on sim) | < 60 s | 🟡 **Code ready, not flown** |
 
 ---
 

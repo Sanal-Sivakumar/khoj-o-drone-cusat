@@ -57,13 +57,27 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Official Scoring Benchmark**:
   * **Hold** (8 marks): Continuous hold achieved ($8.00 / 8.00$).
   * **Finishing Bonus** (4 marks): Full hold achieved under 60s ($4.00 / 4.00$).
-  * **Speed** (8 marks): Completed hold at $17.73\text{ s}$ ($7.51 / 8.00$).
-  * **Total Score**: **19.51 / 20.00 Marks** (rounds to **20 / 20 Maximum Marks**).
+  * **Speed** (8 marks): Completed hold at $17.70\text{ s}$ on the portal ($7.5 / 8.00$).
+  * **Total Score (portal)**: **19.00 / 20.00 Marks**. The $15\text{ s}$ target for full speed marks was missed; the earlier "rounds to 20/20" note was incorrect.
+* **Known Improvement (UNVERIFIED)**: The controller is overdamped (slow approach, not unstable). A faster candidate set is $K_p = 10.5,\; K_i = 0.04,\; K_d = 33.5$ (X/Y) and $K_p = 28,\; K_i = 0.14,\; K_d = 30$ (Z), but it has **not** been flown on the simulator yet. Test it on the sim before submitting; the gains above remain the verified ones.
 * **Key Physics Insight**:
   * Rotational cross-coupling in MuJoCo Lee SE(3) controller requires:
     * `pitch_cmd = 1500 + out_x` (Pitch controls the $X$ axis)
     * `roll_cmd = 1500 + out_y` (Roll controls the $Y$ axis)
     * `throttle_cmd = 1518 - out_z` (Throttle controls the $Z$ axis)
+
+
+### 8. Task 2B Status: ✅ COMPLETED & VERIFIED
+* **Deliverables**: `task_2b/` (`KD_5844_waypoint_service.py`, `KD_5844_pico_client.py`, `KD_5844_pico_server.py`, `task_2b_0.db3`, `metadata.yaml`, `KD_5844_task_2b.zip`).
+* **Architecture**: service (`waypoints`) -> action client -> action server (`waypoint_navigation`, holds each goal for $3\text{ s}$). The 2B service serves 4 hardcoded waypoints.
+* **Result**: 40/40, 4-waypoint mission in $37.19\text{ s}$ (benchmark bag in `task_2b/`).
+
+### 9. Task 2C Status: 🟡 IMPLEMENTED & TESTED OFFLINE ONLY (not yet flown)
+* **Goal**: Replace the hardcoded service with one that reads a single `/image_raw` frame, detects the **critical (red)** survivors, and serves a planned route starting at F6. Client and server stay **byte-for-byte unchanged** from 2B.
+* **Files**: `task_2c/KD_5844_waypoint_service.py` (new), `task_2c/KD_5844_pico_client.py` and `task_2c/KD_5844_pico_server.py` (identical copies of 2B). The same service is mirrored in `swift_pico/src/waypoint_service.py` for the workspace.
+* **What is verified**: Offline unit tests with stubbed ROS (grid lookup, detection on the sample 1A image, route planner, image conversion, service reply). The real ROS 2 node, the real `/image_raw` frame and the simulator flight are **not** verified.
+* **Still to do on the lab machine**: build, run the stack plus service, client and server, record the bag (`task_2c_0.db3` + `metadata.yaml`), check the printed route against the arena, then build `KD_5844_task_2c.zip` (3 files + bag at the zip root). A zip without the bag is incomplete.
+* **Design decisions**: see `technical_details.md` section 9 (survivors-only route, exhaustive-permutation planner, one-shot subscription, manual image conversion).
 
 ---
 
@@ -120,6 +134,8 @@ git remote add upstream https://github.com/eYantra-Robotics-Competition/eYRC_26-
 | `src/technical_details.md` | In-depth engineering, mathematical formulations, and CV theory |
 | `src/troubleshoot.md` | Bug tracker, common pitfalls, and precautions |
 | `src/swift_pico/scripts/task1a.py` | Completed Task 1A perception script |
+| `src/swift_pico/src/waypoint_service.py` | Task 2C vision-based waypoint service (workspace copy) |
+| `src/task_2b/`, `src/task_2c/` | Task 2B (final) and Task 2C (pending bag) submission files |
 | `src/swift_pico/src/task_1b_controller/` | Task 1B flight controller package (PID / Waypoint navigation) |
 | `src/swift_pico/src/task_1c_controller/` | Task 1C advanced autonomy controller |
 | `src/swift_pico/launch/` | ROS 2 simulation launch files (e.g. `swift_pico_simulation.launch.py`) |
@@ -164,10 +180,13 @@ You are assisting our team with the e-Yantra Robotics Competition (eYRC 2026–2
 - e-Yantra Template Remote (upstream): https://github.com/eYantra-Robotics-Competition/eYRC_26-27_Khojo-Drone.git
 - Active Branch: kd_sim
 
-### 3. Current Progress (Stage 1 Completed: Tasks 1A, 1B, 1C)
+### 3. Current Progress (Stage 1 Completed: Tasks 1A, 1B, 1C; Stage 2: 2A scored 19/20, 2B done, 2C code ready)
 - Task 1A (Survivor Detection & Localization): Fully implemented in src/swift_pico/scripts/KD_5844_task1a.py, packaged as KD_5844.zip. Scored 20/20.
 - Task 1B (Altitude Z-Axis PID Flight Control): Tuned via swift_pico/src/task_1b_controller and pid_values.yaml. Packaged in task_1b/KD_5844_task_1b.zip. Scored 40/40.
 - Task 1C (Multi-Axis Position Hold & Waypoint Tracking): Autonomous 3D trajectory tracking via swift_pico/src/task_1c_controller. Packaged in task_1c/KD_5844_task_1c.zip. Scored 40/40.
+- Task 2A (3D position PID): Scored 19.00/20 (stabilized at 17.70 s, target 15 s). Faster gain set exists but is unverified.
+- Task 2B (waypoint service + action client/server): 40/40, 37.19 s.
+- Task 2C (vision-based waypoint service): code in task_2c/ and swift_pico/src/waypoint_service.py, tested offline only. Needs a sim run and bag before zipping.
 
 ### 4. Development Rules to Strictly Follow
 1. Always explain concepts from first principles (mathematical formulation, ROS 2 architecture, MuJoCo physics).

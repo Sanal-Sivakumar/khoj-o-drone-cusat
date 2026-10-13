@@ -28,6 +28,9 @@ This document catalogs every error, environment conflict, and bug encountered du
 | Drone flies sideways into arena wall / spirals away | Actuator cross-coupling: Pitch controls X, Roll controls Y | [Issue 18](#issue-18-actuator-cross-coupling--drone-flying-into-arena-walls) |
 | `AttributeError: _ARRAY_API not found` / NumPy 2.x crash | PyPI NumPy 2.2.6 incompatible with system-compiled Matplotlib 3.5.1 | [Issue 19](#issue-19-numpy-2x-binary-incompatibility-in-tuning-gui) |
 | Erratic jerky flight / Drone ignoring PID gains | Lingering zombie controller processes fighting over `/drone_command` | [Issue 20](#issue-20-zombie-processes-fighting-over-drone_command-topic) |
+| Waypoint service call never returns / client hangs in 2C | Service called before the single `/image_raw` frame has been processed | [Issue 22](#issue-22-task-2c-service-call-before-the-image-is-processed) |
+| Fewer than 4 ArUco markers / no route in 2C | Camera frame missing corner markers or wrong lighting | [Issue 23](#issue-23-task-2c-no-route-from-the-camera-frame) |
+| Stabilize time 17.70 s, speed marks lost in 2A | Overdamped PID gains (high Kd/Kp) | [Issue 24](#issue-24-task-2a-overdamped-response-and-lost-speed-marks) |
 
 ---
 
@@ -465,12 +468,42 @@ When running `docker exec -it ros2_humble bash` and immediately pasting commands
    ```
 2. Either wait for `root@...:#` prompt before pasting, or invoke one-shot commands directly from the host terminal via `docker exec -it ros2_humble bash -c "..."`.
 
+---
 
+### Issue 22: Task 2C Service Call Before the Image Is Processed
 
+#### Symptom:
+The client prints "Service waypoints not available yet" or waits a long time after the service node is up.
 
+#### Cause:
+The service needs one `/image_raw` frame before it has a route. The client may call it earlier than that.
 
+#### Fix:
+The service handler waits on a `threading.Event` (up to 90 s) inside a `MultiThreadedExecutor` with a `ReentrantCallbackGroup`, so the image callback can still run while the request waits. Start the simulation (camera publishing) before the service node. Do not switch to a single-threaded executor, which would deadlock.
 
+---
 
+### Issue 23: Task 2C No Route From the Camera Frame
 
+#### Symptom:
+Log says markers were not found or no critical survivors were detected, and the service never answers.
 
+#### Cause:
+`detect_corner_markers` needs all four corner ArUco markers (80/85/90/95) and the HSV red mask needs reasonable lighting. If detection fails the node logs an error and keeps its subscription, so it retries on the next frame.
+
+#### Fix:
+Check `/tmp/kd_5844_route_debug.png` (saved when a route is built) and `ros2 topic echo /image_raw --once`. Confirm the camera sees the whole arena. The grid file must also be findable (`KD_GRID_FILE`, next to the script, or `scripts/grid_whycode_coordinates.csv`).
+
+---
+
+### Issue 24: Task 2A Overdamped Response and Lost Speed Marks
+
+#### Symptom:
+Portal score 19.00/20, stabilized at 17.70 s versus the 15 s target. No overshoot, no instability, but slow approach.
+
+#### Cause:
+Verified from the bag: the drone enters the sphere at 7.70 s. The gain set (X/Y $K_d/K_p \approx 2.6$) brakes too hard. The earlier documentation that claimed 20/20 at 14.3 s was not backed by a bag or portal result.
+
+#### Fix:
+Try the candidate gains (X/Y 10.5/0.04/33.5, Z 28/0.14/30) on the simulator and record a bag. Until that is done, treat them as unverified. Only update the docs with measured numbers.
 
