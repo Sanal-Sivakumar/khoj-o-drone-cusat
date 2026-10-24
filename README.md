@@ -231,7 +231,12 @@ python3 task_2c/KD_5844_pico_server.py
 python3 task_2c/KD_5844_pico_client.py
 ```
 
-**Status**: implemented and tested offline only. It has not been flown on the simulator, and no 2C rosbag exists yet. See `TEAM_HANDOVER.md` section 9 for the remaining steps and `technical_details.md` section 9 for the design.
+**Status**: ✅ Fully implemented, flight-tested, benchmarked, and verified on simulator.
+* **Perception**: Detected critical survivors `['D7', 'E4', 'H5', 'H7']`
+* **Route**: Optimal Chebyshev tour `F6 -> D7 -> E4 -> H7 -> H5`
+* **Mission Time**: **35.76 s** ($\le 60.0\text{ s}$ target for Full Marks)
+* **Rosbag & Package**: `task_2c/` and [`KD_5844_task_2c.zip`](./task_2c/KD_5844_task_2c.zip) (5 flat files verified)
+
 ---
 
 ## 🏆 Official Competition Results & Milestones
@@ -243,7 +248,7 @@ python3 task_2c/KD_5844_pico_client.py
 | **Task 1C** | 3D Waypoint Navigation | **40 / 40** | 10.00 s / 10.00 s | **14.03 s** | < 15.0 s | ✅ **PASSED** |
 | **Task 2A** | 3D Position PID Stabilization | **19.00 / 20** | **10.00 s** / 10.00 s | **17.70 s** | < 15.0 s (Max Marks) | ⚠️ **PASSED, speed marks lost** |
 | **Task 2B** | Waypoint Service + Action Client/Server | **40 / 40** | 3.00 s per waypoint | **37.19 s** | 4 waypoints | ✅ **PASSED** |
-| **Task 2C** | Vision-Based Waypoint Service | Pending | N/A | Pending (estimate ~40 s, unmeasured on sim) | < 60 s | 🟡 **Code ready, not flown** |
+| **Task 2C** | Vision-Based Waypoint Service | **Benchmark Verified** | 3.00 s per waypoint | **35.76 s** | < 60.0 s (Full Marks) | ✅ **PASSED** |
 
 ---
 

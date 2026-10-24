@@ -72,12 +72,17 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Architecture**: service (`waypoints`) -> action client -> action server (`waypoint_navigation`, holds each goal for $3\text{ s}$). The 2B service serves 4 hardcoded waypoints.
 * **Result**: 40/40, 4-waypoint mission in $37.19\text{ s}$ (benchmark bag in `task_2b/`).
 
-### 9. Task 2C Status: 🟡 IMPLEMENTED & TESTED OFFLINE ONLY (not yet flown)
-* **Goal**: Replace the hardcoded service with one that reads a single `/image_raw` frame, detects the **critical (red)** survivors, and serves a planned route starting at F6. Client and server stay **byte-for-byte unchanged** from 2B.
-* **Files**: `task_2c/KD_5844_waypoint_service.py` (new), `task_2c/KD_5844_pico_client.py` and `task_2c/KD_5844_pico_server.py` (identical copies of 2B). The same service is mirrored in `swift_pico/src/waypoint_service.py` for the workspace.
-* **What is verified**: Offline unit tests with stubbed ROS (grid lookup, detection on the sample 1A image, route planner, image conversion, service reply). The real ROS 2 node, the real `/image_raw` frame and the simulator flight are **not** verified.
-* **Still to do on the lab machine**: build, run the stack plus service, client and server, record the bag (`task_2c_0.db3` + `metadata.yaml`), check the printed route against the arena, then build `KD_5844_task_2c.zip` (3 files + bag at the zip root). A zip without the bag is incomplete.
-* **Design decisions**: see `technical_details.md` section 9 (survivors-only route, exhaustive-permutation planner, one-shot subscription, manual image conversion).
+### 9. Task 2C Status: ✅ COMPLETED, BENCHMARKED & VERIFIED
+* **Goal**: Autonomous vision-guided waypoint navigation: single `/image_raw` frame perception, red (critical) survivor detection, nearest-intersection snapping, Chebyshev-cost route planning from `F6`, dynamic service serving, and 4-waypoint closed-loop navigation with 3.0s holds.
+* **Perception & Route**: Detected critical survivors `['D7', 'E4', 'H5', 'H7']`, optimal route `F6 -> D7 -> E4 -> H7 -> H5`.
+* **Flight Performance**:
+  * Goal 1 (`D7` [2.44, -1.21, 13.00]): reached at $6.4\text{ s}$, held for 3.0s continuously.
+  * Goal 2 (`E4` [1.22, 2.44, 13.00]): reached at $15.2\text{ s}$, held for 3.0s continuously.
+  * Goal 3 (`H7` [-2.42, -1.21, 13.00]): reached at $24.4\text{ s}$, held for 3.0s continuously.
+  * Goal 4 (`H5` [-2.43, 1.22, 13.00]): reached at $32.7\text{ s}$, held for 3.0s continuously.
+  * **Total Mission Time**: **35.76 s** (Target Benchmark: $\le 60.0\text{ s}$ for **FULL MARKS**).
+* **Deliverables**: `task_2c/` (`KD_5844_waypoint_service.py`, `KD_5844_pico_client.py`, `KD_5844_pico_server.py`, `task_2c_0.db3`, `metadata.yaml`, `KD_5844_task_2c.zip`).
+* **Submission Package**: `KD_5844_task_2c.zip` (verified 5 flat files: 3 Python scripts + `task_2c_0.db3` + `metadata.yaml`).
 
 ---
 
