@@ -14,7 +14,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/NavToWaypoint.action"
   "srv/GetWaypoints.srv"
   "srv/GetStableRoute.srv"
-  "srv/ReplanFromPose.srv"
   DEPENDENCIES geometry_msgs action_msgs
 )
 
