@@ -239,6 +239,41 @@ python3 task_2c/KD_5844_pico_client.py
 
 ---
 
+## ⚡ Task 3A: End-to-End Autonomous Search, Rescue & Obstacle Avoidance
+
+Task 3A is the full disaster mission combining autonomous vision perception, obstacle avoidance, critical and stable phases, dynamic in-flight replanning at the Switch, two-tiered saving maneuvers, and precision landing back at `F6`.
+
+```text
+Take-off at F6 (t=0) ──► Critical Phase (t <= 55s) ──► The Switch (Mid-Flight Cancel & Replan)
+                                                                 │
+                                                                 ▼
+Landed on F6 (Mission Complete) ◄── Home Hover (Z=13, 1s) ◄── Stable Phase (All 3 Stable Survivors)
+```
+
+### Execution Workflow (4 Terminals):
+```bash
+# Terminal 1: Simulation Stack (Task 3 arena)
+ros2 launch swift_pico swift_pico_simulation.launch.py
+
+# Terminal 2: Mission Waypoint Service
+python3 task_3a/KD_5844_waypoint_service.py
+
+# Terminal 3: Mission Client
+python3 task_3a/KD_5844_pico_client.py
+
+# Terminal 4: Waypoint Action Server (starts flight)
+python3 task_3a/KD_5844_pico_server.py
+```
+
+### Key Mission Rules & Architecture:
+* **Saving Maneuver**: 1.0s Visit at $Z = 13.0$, followed by 2.0s Save at $Z = 14.0$, inside a Euclidean sphere of radius $0.4\text{ m}$.
+* **Obstacle Clearance**: Black prism obstacles inflated with $32\text{ px}$ safety clearance ($\approx 0.51\text{ m}$). Straight-line shortcutting ensures zero unnecessary waypoints and continuous velocity.
+* **The Switch**: Triggered upon completion of all 3 critical saves or at $t = 54.5\text{ s}$ timer expiration. In-flight goal is canceled, holding position while `replan_from_pose` plans the stable route through the 3 stable survivors and home to `F6`.
+* **Home & Landing**: Returns to `F6`, hovers at $Z = 13.0$ for 1.0s, smoothly descends with horizontal PID active, and disarms on ground contact.
+* **Deliverables**: [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py), [`task_3a/KD_5844_pico_client.py`](../task_3a/KD_5844_pico_client.py), [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py), `ReplanFromPose.srv`.
+
+---
+
 ## 🏆 Official Competition Results & Milestones
 
 | Task | Module / Scope | Official Score | Hold Time Achieved | Total Time | Target Benchmark | Status |

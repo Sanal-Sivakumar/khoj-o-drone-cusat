@@ -84,6 +84,21 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Deliverables**: `task_2c/` (`KD_5844_waypoint_service.py`, `KD_5844_pico_client.py`, `KD_5844_pico_server.py`, `task_2c_0.db3`, `metadata.yaml`, `KD_5844_task_2c.zip`).
 * **Submission Package**: `KD_5844_task_2c.zip` (verified 5 flat files: 3 Python scripts + `task_2c_0.db3` + `metadata.yaml`).
 
+### 10. Task 3A Status: 🚀 IMPLEMENTED, AUDITED & READY FOR FLIGHT
+* **Goal**: End-to-end multi-phase disaster response:
+  * 3 critical survivors (red) saved within 55s window (1s Visit at Z=13 + 2s Save at Z=14 inside 0.4m sphere).
+  * 3 obstacles (black prisms) detected and inflated with safety clearance; optimal obstacle-avoidance routing.
+  * In-flight goal cancellation at the Switch with position preservation.
+  * Dynamic replanning from actual in-flight pose via custom `ReplanFromPose.srv`.
+  * 3 stable survivors (yellow) saved after the Switch.
+  * Precision home return to `F6`, 1s hover at Z=13, and smooth landing with disarm.
+* **Deliverables**:
+  * [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py)
+  * [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py)
+  * [`task_3a/KD_5844_pico_client.py`](../task_3a/KD_5844_pico_client.py)
+  * [`waypoint_navigation/srv/ReplanFromPose.srv`](./waypoint_navigation/srv/ReplanFromPose.srv)
+  * [`package_task_3a.py`](../package_task_3a.py) & [`test_task_3a.py`](../test_task_3a.py)
+
 ---
 
 ## 🚀 How to Set Up & Start on Your Machine

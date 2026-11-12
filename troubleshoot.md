@@ -507,3 +507,56 @@ Verified from the bag: the drone enters the sphere at 7.70 s. The gain set (X/Y 
 #### Fix:
 Try the candidate gains (X/Y 10.5/0.04/33.5, Z 28/0.14/30) on the simulator and record a bag. Until that is done, treat them as unverified. Only update the docs with measured numbers.
 
+---
+
+### Issue 25: False Obstacle Detection from Trees and Water Shadows in Task 3A
+
+#### Symptom:
+Hundreds of false obstacles detected, grid flooded with off-limits markers, and path planner fails or behaves erratically.
+
+#### Cause:
+Using broad HSV threshold for black ($V \le 70$ with any saturation) matches dark tree foliage and water background pixels (over 160,000 pixels in a 900x900 arena).
+
+#### Fix:
+Strictly isolate true neutral black obstacles: require $S \le 65$ and $V \le 45$, and enforce a minimum contour area of $1000\text{ px}^2$. This completely eliminates background false positives while capturing the true 3D obstacle prisms.
+
+---
+
+### Issue 26: Severe Stuttering and Missing the 55s Critical Window
+
+#### Symptom:
+Drone jerks or decelerates at every grid cell along the path, taking over 60 seconds and missing the critical window.
+
+#### Cause:
+Generating raw 8-connected A* paths creates intermediate via points at every $75\text{ px}$ step. For each via point, the action client and server execute a full dispatch/result cycle, braking the drone.
+
+#### Fix:
+Apply line-of-sight shortcutting (string pulling). If the direct line between two waypoints does not intersect any inflated obstacle contour, fly direct with zero intermediate waypoints! Only place via waypoints when bending around an obstacle corner.
+
+---
+
+### Issue 27: False Sphere Containment via Axis-Aligned Box
+
+#### Symptom:
+Drone claims to be holding inside the sphere, but the automated evaluator rejects the hold.
+
+#### Cause:
+Using `abs(dx) <= 0.4 and abs(dy) <= 0.4 and abs(dz) <= 0.4` defines a cube whose corners are at $\sqrt{3 \times 0.4^2} \approx 0.693\text{ m} > 0.4\text{ m}$.
+
+#### Fix:
+Enforce true Euclidean sphere metric: `math.sqrt(dx**2 + dy**2 + dz**2) <= 0.4`.
+
+---
+
+### Issue 28: Horizontal Drift During Landing at F6
+
+#### Symptom:
+Drone drifts sideways and misses the F6 landing pad during the final descent.
+
+#### Cause:
+Setting `pitch_cmd = 1500` and `roll_cmd = 1500` during landing mode cuts off attitude correction, allowing ground-effect turbulence to blow the drone off-target.
+
+#### Fix:
+Keep X and Y position PID active at $(F6\_X, F6\_Y)$ during descent while commanding a governed throttle descent until touchdown ($Z \ge 15.8$), then disarm.
+
+
