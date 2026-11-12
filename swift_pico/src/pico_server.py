@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
 
 '''
-Khoj-o-Drone (KD) — Task 2B: High-Speed Waypoint Navigation Action Server
+Khoj-o-Drone (KD) — Task 3A: Mission Action Server (pico_server)
 Team ID: KD_5844
 
-Implements ROS 2 Action Server 'waypoint_navigation' (NavToWaypoint.action).
-Executes high-speed sprints between waypoints with active pitch/roll braking and
-altitude pitch-up decoupling, guaranteeing rock-solid Z=13.00 hold and 3.0s holds.
+Action server 'waypoint_navigation' (NavToWaypoint.action). The flight controller is the
+Task 2B PID. What each goal means is read from the goal itself:
+
+    hover = False                  -> fly-past point: no stop, done as soon as the drone passes it
+    hover = True,  Z = 13          -> Visit: hold 1 s inside the 0.4 sphere
+    hover = True,  Z = 14          -> Save:  hold 2 s inside the 0.4 sphere
+    hover = True,  Z = 13, over the take-off point (F6)
+                                   -> hold 1 s, then descend, touch down and disarm
+
+New in Task 3:
+  * cancel support — a cancelled goal stops and the drone holds where it is until the next goal
+  * landing at F6
+  * pitch / roll are limited together (same direction, scaled) so the drone flies STRAIGHT
+    legs — the planner's obstacle clearance assumes straight legs
 '''
 
 import time
 import math
-import os
-import yaml
 
 import rclpy
-from rclpy.action import ActionServer
+import threading
+
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -25,6 +36,19 @@ from swift_msgs.msg import SwiftMsgs
 from std_msgs.msg import Header
 from whycode_interfaces.msg import MarkerArray
 from error_msg.msg import Error
+
+
+FLIGHT_Z = 13.0            # cruise / Visit altitude (whycode Z, measured down from the camera)
+SPHERE_RADIUS = 0.37       # our own hold check; the scorer uses 0.40, so this keeps a margin
+VISIT_HOLD = 1.0 + 0.15    # seconds at Z = 13 (+ margin for message timing)
+SAVE_HOLD = 2.0 + 0.15     # seconds at Z = 14
+SAVE_Z_SPLIT = 13.5        # a hover goal below this altitude line (Z larger) is a Save
+MARKER_TIMEOUT = 0.3       # no whycode message for this long = marker lost, hold restarts
+HOME_RADIUS = 0.6          # a hover goal this close to the take-off point is the landing goal
+VIA_LOOKAHEAD = 0.8        # fly-past: aim this far beyond the point so the drone does not brake
+VIA_RADIUS = 0.30          # fly-past: done when this close, or once it has gone past
+LAND_RATE = 0.7            # descent speed of the landing set-point, whycode units per second
+LAND_TIMEOUT = 8.0
 
 
 class WayPointServer(Node):
@@ -41,6 +65,12 @@ class WayPointServer(Node):
         self.curr_state = [0.0, 0.0, 0.0]
         self.drone_position = [0.0, 0.0, 0.0]
         self.desired_state = [0.0, 0.0, 15.0]
+
+        # Mission state
+        self.home = None            # [x, y, z] of the drone on the ground before take-off
+        self.landed = False         # True after touchdown: motors off, controller silent
+        self.goal_seq = 0           # increases with every accepted goal
+        self.goal_lock = threading.Lock()
 
         # Yaw control state
         self.yaw = 0.0
@@ -97,6 +127,8 @@ class WayPointServer(Node):
             NavToWaypoint,
             'waypoint_navigation',
             self.execute_callback,
+            goal_callback=self.goal_callback,
+            cancel_callback=self.cancel_callback,
             callback_group=self.action_callback_group
         )
 
@@ -148,6 +180,7 @@ class WayPointServer(Node):
         if not self.marker_received:
             self.marker_received = True
             self.last_pid_time = now
+            self.home = self.curr_state[:]      # where the drone stands before take-off (F6)
             self.prev_error = [
                 self.desired_state[0] - self.curr_state[0],
                 self.desired_state[1] - self.curr_state[1],
@@ -157,7 +190,7 @@ class WayPointServer(Node):
             self.get_logger().info(f'WhyCode Marker Detected at [{pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}]. Starting control loop.')
 
     def pid(self):
-        if not self.marker_received:
+        if not self.marker_received or self.landed:
             return
 
         now = time.time()
@@ -192,6 +225,16 @@ class WayPointServer(Node):
         out_x = (self.Kp[0] * error[0]) + (self.Ki[0] * self.sum_error[0]) + (self.Kd[0] * self.d_error_filtered[0])
         out_y = (self.Kp[1] * error[1]) + (self.Ki[1] * self.sum_error[1]) + (self.Kd[1] * self.d_error_filtered[1])
         out_z = (self.Kp[2] * error[2]) + (self.Ki[2] * self.sum_error[2]) + (self.Kd[2] * self.d_error_filtered[2])
+
+        # 4b. Limit pitch and roll TOGETHER: scale both by the same factor so the tilt keeps its
+        #     direction and the drone flies a straight line to the target. (Clamping each axis
+        #     on its own makes a 45-degree dash followed by a one-axis run — a dog-leg that can
+        #     clip an obstacle the planner had routed around.)
+        limit = float(self.max_roll_pitch - 1500)
+        biggest = max(abs(out_x), abs(out_y))
+        if biggest > limit:
+            out_x *= limit / biggest
+            out_y *= limit / biggest
 
         # 5. Map to RC PWM Commands
         pitch_cmd = 1500 + int(out_x)
@@ -236,68 +279,150 @@ class WayPointServer(Node):
         self.pos_error.yaw_error = float(yaw_error)
         self.pos_error_pub.publish(self.pos_error)
 
-    def is_drone_in_sphere(self, drone_pos, target, tolerance=0.4):
-        return (
-            abs(drone_pos[0] - target[0]) <= tolerance and
-            abs(drone_pos[1] - target[1]) <= tolerance and
-            abs(drone_pos[2] - target[2]) <= tolerance
-        )
+    # ------------------------------------------------------------------ helpers
+    def in_sphere(self, target, radius=SPHERE_RADIUS):
+        d = math.sqrt(sum((self.drone_position[i] - target[i]) ** 2 for i in range(3)))
+        return d <= radius
 
-    def execute_callback(self, goal_handle):
-        req_wp = goal_handle.request.waypoint.position
-        target = [float(req_wp.x), float(req_wp.y), float(req_wp.z)]
-        self.desired_state = target[:]
+    def marker_visible(self):
+        return (time.time() - self.last_marker_time) <= MARKER_TIMEOUT
+
+    def set_target(self, target):
+        self.desired_state = [float(target[0]), float(target[1]), float(target[2])]
         self.sum_error = [0.0, 0.0, 0.0]
         self.d_error_filtered = [0.0, 0.0, 0.0]
 
-        self.get_logger().info(f'Executing Goal -> Waypoint: [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}]')
+    def is_home(self, target):
+        return (self.home is not None and
+                math.hypot(target[0] - self.home[0], target[1] - self.home[1]) <= HOME_RADIUS)
 
-        start_time = time.time()
-        point_in_sphere_start_time = None
-        max_time_inside_sphere = 0.0
+    # ------------------------------------------------------------------ action callbacks
+    def goal_callback(self, goal_request):
+        return GoalResponse.ACCEPT
 
+    def cancel_callback(self, goal_handle):
+        # ROS 2 action servers reject cancels unless told otherwise.
+        self.get_logger().info('Cancel request received: accepted.')
+        return CancelResponse.ACCEPT
+
+    def publish_feedback(self, goal_handle, feedback_msg, hold_time):
+        feedback_msg.current_waypoint.header.stamp = self.get_clock().now().to_msg()
+        feedback_msg.current_waypoint.header.stamp.sec = int(hold_time)
+        feedback_msg.current_waypoint.pose.position.x = float(self.curr_state[0])
+        feedback_msg.current_waypoint.pose.position.y = float(self.curr_state[1])
+        feedback_msg.current_waypoint.pose.position.z = float(self.curr_state[2])
+        goal_handle.publish_feedback(feedback_msg)
+
+    def execute_callback(self, goal_handle):
+        with self.goal_lock:
+            self.goal_seq += 1
+            my_seq = self.goal_seq
+
+        req = goal_handle.request
+        target = [float(req.waypoint.position.x), float(req.waypoint.position.y), float(req.waypoint.position.z)]
+        hover = bool(req.hover)
+        result = NavToWaypoint.Result()
         feedback_msg = NavToWaypoint.Feedback()
+        start_time = time.time()
 
-        # Monitor transit and verify continuous 3-second hold
-        while True:
-            time.sleep(0.03)
+        # Wait for the first whycode fix (the server may get a goal the instant it comes up).
+        while rclpy.ok() and not self.marker_received:
+            time.sleep(0.02)
 
-            # Update feedback
-            feedback_msg.current_waypoint.header.stamp = self.get_clock().now().to_msg()
-            feedback_msg.current_waypoint.header.stamp.sec = int(max_time_inside_sphere)
-            feedback_msg.current_waypoint.pose.position.x = float(self.curr_state[0])
-            feedback_msg.current_waypoint.pose.position.y = float(self.curr_state[1])
-            feedback_msg.current_waypoint.pose.position.z = float(self.curr_state[2])
-            goal_handle.publish_feedback(feedback_msg)
+        if self.landed:                       # a goal after landing: take off again
+            self.landed = False
+            self.last_pid_time = time.time()
+            self.prev_error = [0.0, 0.0, 0.0]
+            self.arm()
 
-            in_sphere = self.is_drone_in_sphere(self.drone_position, target, tolerance=0.4)
-            now = time.time()
+        # ---- what kind of goal is this? ----
+        if not hover:
+            kind = 'fly-past'
+        elif target[2] > SAVE_Z_SPLIT:
+            kind, hold_needed = 'Save', SAVE_HOLD
+        elif self.is_home(target):
+            kind, hold_needed = 'Home', VISIT_HOLD
+        else:
+            kind, hold_needed = 'Visit', VISIT_HOLD
+        self.get_logger().info(f'Goal [{kind}] -> [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}]')
 
-            if in_sphere:
-                if point_in_sphere_start_time is None:
-                    point_in_sphere_start_time = now
-                    self.get_logger().info(f'🎯 In Sphere [{self.curr_state[0]:.2f}, {self.curr_state[1]:.2f}, {self.curr_state[2]:.2f}]. Starting 3.0s hold...')
+        if kind == 'fly-past':
+            # Aim beyond the point, along the line the drone is already on, so it keeps its speed.
+            sx, sy = self.curr_state[0], self.curr_state[1]
+            leg = math.hypot(target[0] - sx, target[1] - sy)
+            ux, uy = ((target[0] - sx) / leg, (target[1] - sy) / leg) if leg > 1e-3 else (0.0, 0.0)
+            self.set_target([target[0] + ux * VIA_LOOKAHEAD, target[1] + uy * VIA_LOOKAHEAD, FLIGHT_Z])
+        else:
+            self.set_target(target)
 
-                time_inside = now - point_in_sphere_start_time
-                if time_inside > max_time_inside_sphere:
-                    max_time_inside_sphere = time_inside
+        hold_start = None
+        held = 0.0
+        while rclpy.ok():
+            time.sleep(0.02)
 
-                if max_time_inside_sphere >= 3.0:
-                    self.get_logger().info(f'🏆 Waypoint [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}] held for 3.0s continuously!')
+            if my_seq != self.goal_seq:           # a newer goal has taken over
+                goal_handle.abort()
+                return result
+
+            if goal_handle.is_cancel_requested:
+                # Stop this goal and hold right here (at cruise altitude) until the next one.
+                self.set_target([self.curr_state[0], self.curr_state[1], FLIGHT_Z])
+                goal_handle.canceled()
+                self.get_logger().info(
+                    f'Goal [{kind}] cancelled. Holding at [{self.curr_state[0]:.2f}, {self.curr_state[1]:.2f}].')
+                result.hov_time = int(time.time() - start_time)
+                return result
+
+            self.publish_feedback(goal_handle, feedback_msg, held)
+
+            if kind == 'fly-past':
+                dx, dy = target[0] - self.curr_state[0], target[1] - self.curr_state[1]
+                passed = (dx * ux + dy * uy) <= 0.0
+                if math.hypot(dx, dy) <= VIA_RADIUS or passed:
                     break
-            else:
-                if point_in_sphere_start_time is not None:
-                    self.get_logger().warn(f'⚠️ Drifted out of sphere after {now - point_in_sphere_start_time:.2f}s. Resetting hold timer.')
-                    point_in_sphere_start_time = None
-                    max_time_inside_sphere = 0.0
+                continue
+
+            now = time.time()
+            if self.marker_visible() and self.in_sphere(target):
+                if hold_start is None:
+                    hold_start = now
+                held = now - hold_start
+                if held >= hold_needed:
+                    self.get_logger().info(f'{kind} complete: held {held:.2f} s.')
+                    break
+            elif hold_start is not None:
+                self.get_logger().warn(f'Left the sphere after {now - hold_start:.2f} s — hold restarts.')
+                hold_start, held = None, 0.0
+
+        if kind == 'Home' and rclpy.ok():
+            self.land(goal_handle, feedback_msg, target)
 
         goal_handle.succeed()
-
-        result = NavToWaypoint.Result()
-        total_settle_time = int(time.time() - start_time)
-        result.hov_time = total_settle_time
-        self.get_logger().info(f'Goal finished in {total_settle_time}s. Returning result.')
+        result.hov_time = int(time.time() - start_time)
         return result
+
+    def land(self, goal_handle, feedback_msg, target):
+        '''Lower the set-point steadily to the ground over F6, then cut the motors and stay down.'''
+        ground_z = self.home[2]
+        self.get_logger().info('Hover at F6 done. Landing...')
+        z = self.curr_state[2]
+        t0 = last = time.time()
+        while rclpy.ok() and time.time() - t0 < LAND_TIMEOUT:
+            time.sleep(0.02)
+            now = time.time()
+            z = min(z + LAND_RATE * (now - last), ground_z + 0.3)   # ends just below the floor: no bounce
+            last = now
+            self.desired_state = [target[0], target[1], z]
+            self.publish_feedback(goal_handle, feedback_msg, 0.0)
+            if self.curr_state[2] >= ground_z - 0.06:               # touched down
+                break
+        time.sleep(0.2)
+        self.landed = True                    # pid() goes silent from here
+        for _ in range(5):
+            self.disarm()
+            time.sleep(0.05)
+        self.get_logger().info(
+            f'Landed at [{self.curr_state[0]:.2f}, {self.curr_state[1]:.2f}, {self.curr_state[2]:.2f}]. Motors off.')
 
 
 def main(args=None):

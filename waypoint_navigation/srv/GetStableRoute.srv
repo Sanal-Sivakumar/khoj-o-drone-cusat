@@ -1,0 +1,8 @@
+# Request (pico_client -> waypoint_service): the drone's position at the Switch (whycode units)
+geometry_msgs/Point position
+---
+# Response: the stable route in flight order, ending at F6.
+# marker_ids[i] names waypoints.poses[i]: a grid name (e.g. "B2") is a stable survivor,
+# "VIA" is a fly-past point around an obstacle, "F6" is home (hover, then land).
+geometry_msgs/PoseArray waypoints
+string[] marker_ids
