@@ -93,7 +93,7 @@ It explains what has been accomplished so far, how the workspace and Docker envi
   * 3 stable survivors (yellow) saved after the Switch.
   * Precision home return to `F6`, 1s hover at Z=13, and smooth landing with disarm.
 * **Control Architecture (Precision Critically Damped, Obstacle-Safe)**:
-  * **Tightened High-Damping Gains**: $K_p = [54.0, 54.0, 62.0]$, $K_i = [0.45, 0.45, 0.65]$, $K_d = [96.0, 96.0, 91.0]$. High $K_d$ eliminates overshoot; $K_i$ eliminates steady-state drift, holding position within $0.05 - 0.10\text{ m}$ of target.
+  * **Tightened High-Damping Gains**: $K_p = [54.0, 54.0, 62.0]$, $K_i = [0.55, 0.55, 0.75]$, $K_d = [98.0, 98.0, 93.0]$. High $K_d$ eliminates overshoot; $K_i$ eliminates steady-state drift, holding position within $0.05 - 0.10\text{ m}$ of target.
   * **Coupled Straight-Line Limiting**: Pitch and roll commands are scaled by the exact line-of-sight factor (`out_x *= limit / biggest; out_y *= limit / biggest`), strictly eliminating dog-leg diagonal bulging that could clip obstacles.
   * **Terminal Braking Distance**: Linear deceleration inside $0.60\text{ m}$ smoothly tapers bank tilt from $\pm 120\text{ PWM}$ sprint to $\pm 42\text{ PWM}$, bringing the drone to a complete, gentle stop dead-center on each waypoint.
   * **Hysteresis Hold Entry**: Hold counter requires settling within $0.32\text{ m}$ 3D and $0.28\text{ m}$ vertical before starting, while maintaining hold throughout the official $0.40\text{ m}$ sphere, completely eliminating sensor boundary jitter restarts.
@@ -104,15 +104,15 @@ It explains what has been accomplished so far, how the workspace and Docker envi
   * **Critical Window**: Finished all 3 critical saves well before the $55.0\text{ s}$ deadline across all arena layouts.
   * **Switch**: Executed seamlessly; active pose preserved, dynamic route generated with 0 boxed-in warnings.
   * **Stable Phase**: Saved all 3 stable survivors without leaving the sphere.
-  * **Landing**: Precision touchdown on F6 at $X=+0.06, Y=+0.00, Z=15.00$ (within $0.06\text{ m}$ of center, resting flat on ground); motors disarmed.
-  * **Mission Time**: **$T = 87.88\text{ s}$** armed-to-disarmed.
+  * **Landing**: Precision touchdown on F6 at $X=-0.00, Y=-0.04, Z=15.00$ (within $0.04\text{ m}$ of center, resting flat on ground); motors disarmed.
+  * **Mission Time**: **$T = 87.23\text{ s}$** armed-to-disarmed.
   * **Marks Earned**:
     - Visits: $6 \times 3 = 18.0 / 18.0$
     - Saves: $6 \times 5 = 30.0 / 30.0$
     - Hover at F6: $3.0 / 3.0$
     - Landing on F6: $3.0 / 3.0$
-    - Speed Bonus: $10.77 / 26.0$ (at $T=87.88\text{ s}$)
-    - **Total (self-computed)**: **$64.77 / 80.0$** (stable, collision-free run near theoretical physical maximum).
+    - Speed Bonus: $10.88 / 26.0$ (at $T=87.23\text{ s}$)
+    - **Total (self-computed)**: **$64.88 / 80.0$** (stable, collision-free run near theoretical physical maximum).
 * **Deliverables**:
   * [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py)
   * [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py)

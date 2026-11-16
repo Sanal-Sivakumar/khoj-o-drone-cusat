@@ -98,8 +98,8 @@ class WayPointServer(Node):
 
         # Precision Critically Damped Gains: [pitch(X), roll(Y), throttle(Z)]
         self.Kp = [54.0, 54.0, 62.0]
-        self.Ki = [0.45, 0.45, 0.65]
-        self.Kd = [96.0, 96.0, 91.0]
+        self.Ki = [0.55, 0.55, 0.75]
+        self.Kd = [98.0, 98.0, 93.0]
 
         # PID tracking state
         self.prev_error = [0.0, 0.0, 0.0]
