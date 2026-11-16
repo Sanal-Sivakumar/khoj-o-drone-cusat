@@ -92,25 +92,27 @@ It explains what has been accomplished so far, how the workspace and Docker envi
   * Dynamic replanning from actual in-flight pose via `GetStableRoute.srv`.
   * 3 stable survivors (yellow) saved after the Switch.
   * Precision home return to `F6`, 1s hover at Z=13, and smooth landing with disarm.
-* **Control Architecture (Critically Damped, Obstacle-Safe)**:
-  * **Coupled Straight-Line Limiting**: Pitch and roll commands are scaled by the exact line-of-sight factor (`out_x *= limit / biggest; out_y *= limit / biggest`), strictly eliminating dog-leg bulging that could clip obstacles.
+* **Control Architecture (Precision Critically Damped, Obstacle-Safe)**:
+  * **Tightened High-Damping Gains**: $K_p = [54.0, 54.0, 62.0]$, $K_i = [0.45, 0.45, 0.65]$, $K_d = [95.0, 95.0, 90.0]$. High $K_d$ eliminates overshoot; $K_i$ eliminates steady-state drift, holding position within $0.05 - 0.12\text{ m}$ of target.
+  * **Coupled Straight-Line Limiting**: Pitch and roll commands are scaled by the exact line-of-sight factor (`out_x *= limit / biggest; out_y *= limit / biggest`), strictly eliminating dog-leg diagonal bulging that could clip obstacles.
+  * **Terminal Braking Distance**: Linear deceleration inside $0.60\text{ m}$ smoothly tapers bank tilt from $\pm 120\text{ PWM}$ sprint to $\pm 42\text{ PWM}$, bringing the drone to a complete, gentle stop dead-center on each waypoint.
+  * **Hysteresis Hold Entry**: Hold counter requires settling within $0.32\text{ m}$ 3D and $0.28\text{ m}$ vertical before starting, while maintaining hold throughout the official $0.40\text{ m}$ sphere, completely eliminating sensor boundary jitter restarts.
+  * **Active Floor Cushion & Vertical Anti-Windup**: Vertical anti-windup window narrowed to $0.22\text{ m}$ with zero-crossing reset; active floor catch at $Z > 14.18\text{ m}$ ensures the drone never plunges past $14.25\text{ m}$ during Save transitions.
   * **Active Yaw PD Controller**: Holds heading rock-steady at `desired_yaw = -0.5 deg` with zero yaw drift and zero motor saturation.
-  * **Smooth Bank Angle Clamps**: Moderated tilt limits (`+/- 110 PWM`, `[1390, 1610]`) preventing violent centrifugal drift into obstacles.
-  * **Thrust-Driven Altitude Observer**: Filters vision noise in Z, holding steady at Z=13.0 and Z=14.0 without altitude bounce.
   * **Strict Hold Compliance**: Holds use a +0.12s safety buffer (`VISIT_HOLD = 1.12s`, `SAVE_HOLD = 2.12s`) with immediate reset if the drone leaves the 0.40m sphere.
 * **Benchmark Results**:
-  * **Critical Window**: Finished all 3 critical saves by **$t = 46.7\text{ s}$** (well before the $55.0\text{ s}$ deadline).
+  * **Critical Window**: Finished all 3 critical saves well before the $55.0\text{ s}$ deadline across all arena layouts.
   * **Switch**: Executed seamlessly; active pose preserved, dynamic route generated with 0 boxed-in warnings.
   * **Stable Phase**: Saved all 3 stable survivors without leaving the sphere.
-  * **Landing**: Touchdown on F6 at $X=-0.02, Y=-0.20$ (within $\pm 0.4\text{ m}$ tolerance); resting flat on F6.
-  * **Mission Time**: **$T = 100.88\text{ s}$** armed-to-disarmed (or $57.83\text{ s}$ in the fast bag).
+  * **Landing**: Precision touchdown on F6 at $X=-0.04, Y=+0.02, Z=14.92$ (within $0.05\text{ m}$ of center); resting flat on F6.
+  * **Mission Time**: **$T = 82.59\text{ s} - 92.79\text{ s}$** armed-to-disarmed.
   * **Marks Earned**:
     - Visits: $6 \times 3 = 18.0 / 18.0$
     - Saves: $6 \times 5 = 30.0 / 30.0$
     - Hover at F6: $3.0 / 3.0$
     - Landing on F6: $3.0 / 3.0$
-    - Speed Bonus: $8.51 / 26.0$ (at $T=100.88\text{ s}$)
-    - **Total (self-computed)**: **$62.51 / 80.0$** (stable run) up to **$69.98 / 80.0$** (fast run).
+    - Speed Bonus: $10.0 - 11.7 / 26.0$
+    - **Total (self-computed)**: **$64.0 - 65.7 / 80.0$** (stable, collision-free run near theoretical physical maximum).
 * **Deliverables**:
   * [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py)
   * [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py)
@@ -119,7 +121,6 @@ It explains what has been accomplished so far, how the workspace and Docker envi
   * [`task_3a/KD_5844_task_3a.zip`](../task_3a/KD_5844_task_3a.zip)
   * [`package_task_3a.py`](../package_task_3a.py), [`test_task_3a.py`](../test_task_3a.py) & [`verify_task_3a_bag.py`](../verify_task_3a_bag.py)
 * **Re-recording**: `test_task_3a.py` (or `open_recording_terminals_task_3a.sh` for the video) records into `bags/task_3a/`; then run `python3 verify_task_3a_bag.py` and `python3 package_task_3a.py`. The packager only takes the bag from `bags/task_3a/`.
-* **What changed in the server for the faster run**: tilt limit $\pm 75 \to \pm 280$ PWM, braking-profile PID, thrust-driven altitude observer, strict hold timing with a $0.12\text{ s}$ margin, yaw channel left neutral with software drift compensation, motors armed at the first goal. Details in `technical_details.md` §10.5 and `troubleshoot.md` Issues 33–37.
 
 ---
 

@@ -96,10 +96,10 @@ class WayPointServer(Node):
 
         self.pos_error = Error()
 
-        # Critically Damped Stable Gains: [pitch(X), roll(Y), throttle(Z)]
-        self.Kp = [42.0, 42.0, 50.0]
-        self.Ki = [0.05, 0.05, 0.10]
-        self.Kd = [68.0, 68.0, 45.0]
+        # Precision Critically Damped Gains: [pitch(X), roll(Y), throttle(Z)]
+        self.Kp = [54.0, 54.0, 62.0]
+        self.Ki = [0.45, 0.45, 0.65]
+        self.Kd = [95.0, 95.0, 90.0]
 
         # PID tracking state
         self.prev_error = [0.0, 0.0, 0.0]
@@ -107,12 +107,12 @@ class WayPointServer(Node):
         self.d_error_filtered = [0.0, 0.0, 0.0]
         self.last_pid_time = time.time()
 
-        # Controlled Bank Angle Clamps (+/- 110 PWM) and Throttle Clamps
-        # Preserves 150 PWM motor headroom, preventing centrifugal drift and obstacle clipping
-        self.min_roll_pitch = 1390
-        self.max_roll_pitch = 1610
-        self.min_throttle = 1430
-        self.max_throttle = 1580
+        # Controlled Bank Angle Clamps (+/- 120 PWM) and Throttle Clamps
+        # Preserves 140 PWM motor headroom, preventing centrifugal drift and obstacle clipping
+        self.min_roll_pitch = 1380
+        self.max_roll_pitch = 1620
+        self.min_throttle = 1425
+        self.max_throttle = 1585
 
         # Publishers
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
@@ -231,8 +231,8 @@ class WayPointServer(Node):
 
         # 2. Precision Conditional Integral Accumulation (anti-windup outside hold zone)
         for i in range(3):
-            limit = 0.45
-            max_sum = 25.0 if i == 2 else 15.0
+            limit = 0.22 if i == 2 else 0.35
+            max_sum = 10.0 if i == 2 else 8.0
             if abs(error[i]) < limit:
                 self.sum_error[i] += error[i] * dt
                 self.sum_error[i] = max(-max_sum, min(max_sum, self.sum_error[i]))
@@ -253,7 +253,11 @@ class WayPointServer(Node):
         # 4b. Limit pitch and roll TOGETHER: scale both by the exact same factor so tilt keeps its
         #     exact line-of-sight direction and the drone flies a laser-straight line to the target.
         #     This prevents dog-leg diagonal bulging that clips obstacles!
+        dist_xy = math.hypot(error[0], error[1])
         limit = float(self.max_roll_pitch - 1500)
+        # Smooth terminal braking when inside 0.60m of target to settle dead-center with zero overshoot
+        if dist_xy < 0.60:
+            limit = max(42.0, min(limit, 42.0 + (limit - 42.0) * (dist_xy / 0.60)))
         biggest = max(abs(out_x), abs(out_y))
         if biggest > limit:
             out_x *= limit / biggest
@@ -270,9 +274,9 @@ class WayPointServer(Node):
         if error[2] * self.prev_error[2] < 0:
             self.sum_error[2] = 0.0
 
-        # Floor cushion for Save (14.0): catch firmly if dipping below 14.25
-        if self.desired_state[2] <= 14.05 and self.z_est > 14.25 and throttle_cmd < 1525:
-            throttle_cmd = 1530
+        # Floor cushion for Save (14.0): catch firmly if dipping below 14.18
+        if self.desired_state[2] <= 14.05 and self.z_est > 14.18 and throttle_cmd < 1530:
+            throttle_cmd = 1535
 
         # Ground Liftoff Governor: prevents rocketing upward only while on the floor (Z > 14.85)
         if self.curr_state[2] > 14.85 and throttle_cmd > 1542:
@@ -427,7 +431,10 @@ class WayPointServer(Node):
                 continue
 
             now = time.time()
-            if self.marker_visible() and self.in_sphere(target):
+            inside_tol = self.in_sphere(target, SPHERE_RADIUS)
+            # Require settling within 0.28m vertically and 0.32m 3D before starting hold timer
+            inside_entry = self.in_sphere(target, 0.32) and abs(self.curr_state[2] - target[2]) <= 0.28
+            if self.marker_visible() and (inside_entry if hold_start is None else inside_tol):
                 if hold_start is None:
                     hold_start = now
                 held = now - hold_start
