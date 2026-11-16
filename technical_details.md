@@ -17,6 +17,7 @@ Welcome to the comprehensive technical documentation for **Khoj-o-Drone**. This 
 7. [Task 1C: Multi-Axis (X, Y) Position Hold & Waypoint Navigation](#7-task-1c-multi-axis-x-y-position-hold--waypoint-navigation)
 8. [Task 2A: Autonomous 3D Position PID Control Loop](#8-task-2a-autonomous-3d-position-pid-control-loop)
 9. [Tasks 2B and 2C: Waypoint Service, Action Client/Server and Vision Planner](#9-tasks-2b-and-2c-waypoint-service-action-clientserver-and-vision-planner)
+10. [Task 3A: Multi-Survivor Search & Rescue with Obstacle Avoidance](#10-task-3a-multi-survivor-search--rescue-with-obstacle-avoidance)
 
 ---
 
@@ -409,11 +410,11 @@ To ensure 100% compliance with e-Yantra's automated evaluation harness and gradi
 ### 3. Why Chebyshev cost and a survivors-only route
 The 2B bag showed leg time of about $4.0\text{ s} + 0.51\text{ s/m}\times\max(|\Delta x|,|\Delta y|)$, because pitch and roll commands are clamped independently, so a diagonal move is no faster than the larger axis alone. Since the unchanged server holds $3\text{ s}$ at *every* goal, intermediate (obstacle-avoiding) waypoints would each cost an extra hold, so the route contains survivors only. The arena has only flat markers and no physical obstacles in the simulator model.
 
-### 4. Estimated timing (not measured)
-About $4$ survivors $\times(4.0 + 3.0)\text{ s}$ plus travel gives roughly $40\text{ s}$ against the $60\text{ s}$ bonus limit, extrapolated from the 2B bag. Confirm on the sim.
+### 4. Measured timing
+The simulator run took $35.76\text{ s}$ for the 4-survivor mission against the $60\text{ s}$ bonus limit (the earlier $\approx 40\text{ s}$ figure was an estimate from the 2B bag).
 
 ### 5. Verification status
-Verified offline with stubbed ROS: grid parsing, detection on `image_1.jpg` (critical B7, C10, I2), planner, image conversion, and the service reply.
+Flown on the simulator and recorded (`task_2c/`). Also verified offline with stubbed ROS: grid parsing, detection on `image_1.jpg` (critical B7, C10, I2), planner, image conversion, and the service reply.
 
 ---
 
@@ -448,7 +449,7 @@ $$\text{Total Score} = 6 \times (3 + 5) + 3 + 3 + 26 \times \left(\frac{150 - T}
 - Mandatory static holds alone consume:
   $$6 \times (1.0\text{ s Visit} + 2.0\text{ s Save}) + 1.0\text{ s Hover} = 19.0\text{ seconds}$$
 - The speed bonus formula decays linearly from 26 at $T=0$ to 0 at $T=150$. To achieve 26.0 speed marks, $T$ must be 0, which violates the laws of physics. Even in a hypothetical zero-travel-time teleportation run ($T = 19.0\text{ s}$), maximum achievable speed marks would be $26 \times \frac{131}{150} = 22.7$.
-- At our verified benchmark of **$T = 100.5\text{ s}$** ($S=6$), the run achieves a perfect $54.0 / 54.0$ on all mission objectives plus $8.58 / 26$ on speed bonus, yielding **$62.58 / 80\text{ marks}$**, placing in the highest tier of the competition.
+- Our recorded run has **$T = 57.83\text{ s}$** ($S=6$): $54.0 / 54.0$ on the mission objectives plus $26 \times \frac{150 - 57.83}{150} = 15.98$ speed marks, **$69.98 / 80$ self-computed**. $T$ is taken as the armed-to-disarmed time from the signed `/ros_check` state flag in the bag; the portal result is the only official score.
 
 ---
 
@@ -468,9 +469,16 @@ Each segmented obstacle contour is dilated by safety clearance $R = 0.70\text{ W
 ---
 
 ### 5. Flight Controller Dynamics & Tuning
-* **Coupled Pitch/Roll Vector Limiting**: Rather than clamping pitch and roll independently (which causes diagonal 45-degree bulging into obstacles), both control axes are uniformly scaled:
-  $$\text{scale} = \frac{\text{limit}}{\max(|u_x|, |u_y|)}, \quad u_x \leftarrow u_x \cdot \text{scale}, \quad u_y \leftarrow u_y \cdot \text{scale}$$
-* **Critically Damped Altitude Loop**:
-  $$K_p = [30.0, 30.0, 34.0], \quad K_i = [0.03, 0.03, 0.06], \quad K_d = [60.0, 60.0, 38.0]$$
-* **Zero-Crossing Anti-Windup**: When altitude error crosses zero ($e_z(t) \cdot e_z(t-1) < 0$), `sum_error[2]` is immediately cleared to zero, completely eliminating floor bounces during rapid $Z=13 \to Z=14$ descents.
+Numbers below were measured on the simulator with scripted step tests (ground truth from `publish_odometry:=true`).
 
+* **What the simulator allows**: pitch / roll tilt is $4.5^\circ$ per 85 PWM counts ($\pm 280$ counts $\approx 15^\circ \approx 2.6\text{ m/s}^2$); thrust responds within one frame at $\approx 0.020\text{ m/s}^2$ per throttle count around a hover value of $1516$; the attitude loop is second order ($\omega_n \approx 8.4\text{ rad/s}$, $\zeta \approx 0.5$). The previous $\pm 75$ limit used only $\approx 4^\circ$ of tilt.
+* **Braking-profile PID**: the P term asks for an approach speed $v = \min\left(\tfrac{K_p}{K_d} d,\ \sqrt{2 a d},\ v_{max}\right)$ along the line to the target and the D term subtracts the measured velocity, so the output is $K_d (v\,\hat{u} - \dot{x})$. Gains $K_p = [320, 320, 400]$, $K_i = [10, 10, 25]$, $K_d = [300, 300, 220]$, $a = [2.3, 2.3, 2.6]$.
+* **Coupled Pitch/Roll Vector Limiting**: both axes are scaled by the same factor so the drone flies straight legs:
+  $$\text{scale} = \frac{\text{limit}}{\max(|u_x|, |u_y|)}, \quad u_x \leftarrow u_x \cdot \text{scale}, \quad u_y \leftarrow u_y \cdot \text{scale}$$
+* **Altitude observer**: whycode $Z$ jumps by up to $0.3$ between frames (range noise). $Z$ and $\dot Z$ are therefore estimated by predicting with the commanded thrust and correcting with each frame (gains $0.14 / 0.31 / 0.34$ on position / rate / bias). The same smooth $Z$ rescales $X$ and $Y$, because the range noise scales all three coordinates together while the bearing is exact.
+* **Tilt compensation**: throttle is raised by $(1/\cos\theta - 1)\,g$ so the drone does not sag while tilted.
+* **Motor headroom**: throttle is limited to $[1350, 1640]$ and tilt to $\pm 280$; demanding full throttle and full tilt together saturates the motors.
+* **Yaw**: the yaw channel is left at 1500. The slow yaw drift is tracked from the whycode yaw (slew-limited, flicker rejected) and the pitch / roll demand is rotated into the body axes.
+* **Holds**: a hold counts only while every raw frame is inside the $0.40$ sphere, and it runs $0.12\text{ s}$ longer than the rule ($1.12\text{ s}$ Visit, $2.12\text{ s}$ Save).
+* **Arming and landing**: motors are armed when the first goal arrives and disarmed at touchdown, which is detected on the smooth altitude.
+* **Random arena**: `mujoco_bridge` picks one of four layouts per launch (`arena_config` $-1$ = random, $0$–$3$ pinned). Armed times in test runs: $57.8$, $60.1$, $54.8$, $58.8\text{ s}$.

@@ -186,6 +186,12 @@ Ensure all `cv2.imshow` and `cv2.waitKey` calls are guarded behind a development
 
 ---
 
+### Issue 9: Output File Format Discrepancies
+
+#### Symptom:
+The evaluator rejects `<image>_results.txt` although the detections are right.
+
+#### Fix:
 * Use `', '.join(survivor_list)` to guarantee exactly one comma and one space between names.
 
 ---
@@ -619,6 +625,67 @@ if biggest > limit:
 ```
 This forces the drone to track the exact line-of-sight vector without diagonal bulging.
 
+---
 
+### Issue 33: Submission Zip Contained a Stale Rosbag
 
+#### Symptom:
+`KD_5844_task_3a.zip` held a 250 s bag of an aborted debug session (drone on the ground for 70 s, never landed, several simulator instances publishing) instead of the benchmark run.
 
+#### Cause:
+`package_task_3a.py` searched `task_3a/` first for `task_3a_0.db3`; the benchmark was recorded as `task_3a_bag/task_3a_bag_0.db3` and was never matched. `open_recording_terminals_task_3a.sh` also ran `rm -rf task_3a`, deleting the deliverable scripts.
+
+#### Fix:
+Bags are recorded into `bags/task_3a/` (file name `task_3a_0.db3`), and the packager takes the bag only from there. Always run `python3 verify_task_3a_bag.py` before packaging.
+
+---
+
+### Issue 34: Holds Counted by the Server but Broken in the Bag
+
+#### Symptom:
+The client logged 6/6 saves, but in the recorded frames several Visits and Saves had no unbroken stay of 1 s / 2 s inside the 0.40 sphere.
+
+#### Cause:
+A 0.30 s debounce in the server ignored short exits, and the drone was sagging and oscillating in $Z$.
+
+#### Fix:
+No debounce: one frame outside restarts the hold, and holds run 0.12 s longer than the rule. The altitude observer (Issue 35) keeps the drone steady enough that restarts are rare.
+
+---
+
+### Issue 35: Whycode Range Noise in Z (and in X / Y near the Arena Edge)
+
+#### Symptom:
+Raw $Z$ jumps by up to 0.3 between frames; near the arena edge $X$ and $Y$ jump with it. A derivative on raw $Z$ makes the throttle thrash.
+
+#### Cause:
+The range to the marker is estimated from its apparent size (about 18 px across). Range noise scales $X$, $Y$ and $Z$ together; the bearing is exact.
+
+#### Fix:
+Estimate $Z$ and its rate with a thrust-driven observer and rescale $X$ / $Y$ by `z_est / z_raw` before the PID.
+
+---
+
+### Issue 36: Drone Spins and Flies Out of the Arena in Hard Manoeuvres
+
+#### Symptom:
+After raising the tilt limit, some runs ended with the yaw running away and the drone leaving the camera view.
+
+#### Cause:
+(1) The yaw PD chased whycode's flickering yaw; the yaw channel is a rate command with slow, winding dynamics. (2) Full throttle together with full tilt saturates the motors.
+
+#### Fix:
+Leave `rc_yaw` at 1500, track the slow drift and rotate the pitch / roll demand into the body axes; limit throttle to 1350–1640 and tilt to ±280. If the marker is lost for 0.5 s the server levels off at hover throttle.
+
+---
+
+### Issue 37: Early Motor Cut-Off at Landing
+
+#### Symptom:
+After "landing", the marker read $Z \approx 14.65$ with a tilt instead of the ground value 15.01.
+
+#### Cause:
+Touchdown was detected on a single raw $Z$ frame; a noisy frame cut the motors about 0.35 above the floor and the drone dropped.
+
+#### Fix:
+Detect touchdown on the smooth altitude (`z_est >= ground - 0.05`) and descend at 1.6 units/s.

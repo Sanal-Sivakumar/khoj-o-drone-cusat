@@ -32,12 +32,12 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Pipeline**: ArUco detection, 900x900 perspective rectification, 12x12 grid snapping, Red/Yellow HSV segmentation, centroid moments, `<image>_results.txt`.
 
 ### 5. Task 1B Status: ✅ COMPLETED & VERIFIED
-* **Controller**: `swift_pico/src/task_1b_controller`
+* **Controller**: `swift_pico/src/pico_controller_PID.py` (later re-tuned for Task 2A)
 * **PID Tuning Configuration**: `swift_pico/src/pid_values.yaml`
 * **Submission Package**: `task_1b/KD_5844_task_1b.zip` (contains rosbag `task_1b_0.db3` & `metadata.yaml`)
 
 ### 6. Task 1C Status: ✅ COMPLETED & VERIFIED
-* **Controller**: `swift_pico/src/task_1c_controller`
+* **Controller**: `swift_pico/src/pico_controller_PID.py` (later re-tuned for Task 2A)
 * **Waypoint Navigation & Trajectory Tracking**: Autonomous waypoint following across 3D coordinates.
 * **Submission Package**: `task_1c/KD_5844_task_1c.zip` (contains rosbag `task_1c_0.db3` & `metadata.yaml`)
 
@@ -84,7 +84,7 @@ It explains what has been accomplished so far, how the workspace and Docker envi
 * **Deliverables**: `task_2c/` (`KD_5844_waypoint_service.py`, `KD_5844_pico_client.py`, `KD_5844_pico_server.py`, `task_2c_0.db3`, `metadata.yaml`, `KD_5844_task_2c.zip`).
 * **Submission Package**: `KD_5844_task_2c.zip` (verified 5 flat files: 3 Python scripts + `task_2c_0.db3` + `metadata.yaml`).
 
-### 10. Task 3A Status: ✅ FULLY BENCHMARKED & VERIFIED (Score: 62.81 / 80 Marks, 100.28s, 6/6 Saves)
+### 10. Task 3A Status: ✅ FLOWN & BAG-VERIFIED (self-computed 69.98 / 80, T = 57.83 s, 6/6 Saves — not yet a portal score)
 * **Goal**: End-to-end multi-phase disaster response:
   * 3 critical survivors (red) saved within 55s window (1s Visit at Z=13 + 2s Save at Z=14 inside 0.4m sphere).
   * 3 obstacles (black prisms) detected via strict RGB color neutrality filter (`brightest < 45 & diff < 10`) and inflated with safety clearance; optimal visibility-graph obstacle-avoidance routing.
@@ -93,25 +93,27 @@ It explains what has been accomplished so far, how the workspace and Docker envi
   * 3 stable survivors (yellow) saved after the Switch.
   * Precision home return to `F6`, 1s hover at Z=13, and smooth landing with disarm.
 * **Benchmark Results**:
-  * **Critical Window**: Finished all 3 critical saves by **$t = 44.78\text{ s}$** (well before the $55.0\text{ s}$ deadline).
+  * **Critical Window**: Finished all 3 critical saves by **$t = 25.85\text{ s}$** (well before the $55.0\text{ s}$ deadline).
   * **Switch**: Executed seamlessly; active pose preserved, dynamic route generated with 0 boxed-in warnings.
   * **Stable Phase**: Saved all 3 stable survivors without leaving the sphere.
-  * **Landing**: Smooth touchdown on F6 at $X=-0.06, Y=-0.19$ (within $\pm 0.4\text{ m}$ tolerance).
-  * **Touchdown Time**: **$T = 99.2\text{ s}$** (Total test time: **$100.28\text{ s}$**).
+  * **Landing**: Touchdown on F6 at $X=-0.18, Y=0.04$ (within $\pm 0.4\text{ m}$ tolerance); ground truth in test runs shows the drone resting flat.
+  * **Mission Time**: **$T = 57.83\text{ s}$** armed-to-disarmed, read from the signed `/ros_check` state flag in the bag (previous committed run: $99.14\text{ s}$). Test runs on arena configs 0–3: $57.8$, $60.1$, $54.8$, $58.8\text{ s}$.
   * **Marks Earned**:
     - Visits: $6 \times 3 = 18.0 / 18.0$
     - Saves: $6 \times 5 = 30.0 / 30.0$
     - Hover at F6: $3.0 / 3.0$
     - Landing on F6: $3.0 / 3.0$
-    - Speed Bonus: $26 \times \frac{150 - 99.2}{150} \times \frac{6}{6} = 8.81 / 26.0$
-    - **Total Score**: **$62.81 / 80.0\text{ Marks}$** (Highest percentile).
+    - Speed Bonus: $26 \times \frac{150 - 57.83}{150} \times \frac{6}{6} = 15.98 / 26.0$ (the formula only pays $26$ at $T = 0$, so $26/26$ is not reachable)
+    - **Total (self-computed)**: **$69.98 / 80.0$**. The portal result is the only official number.
 * **Deliverables**:
   * [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py)
   * [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py)
   * [`task_3a/KD_5844_pico_client.py`](../task_3a/KD_5844_pico_client.py)
   * [`task_3a/task_3a_0.db3`](../task_3a/task_3a_0.db3) & [`task_3a/metadata.yaml`](../task_3a/metadata.yaml)
   * [`task_3a/KD_5844_task_3a.zip`](../task_3a/KD_5844_task_3a.zip)
-  * [`package_task_3a.py`](../package_task_3a.py) & [`test_task_3a.py`](../test_task_3a.py)
+  * [`package_task_3a.py`](../package_task_3a.py), [`test_task_3a.py`](../test_task_3a.py) & [`verify_task_3a_bag.py`](../verify_task_3a_bag.py)
+* **Re-recording**: `test_task_3a.py` (or `open_recording_terminals_task_3a.sh` for the video) records into `bags/task_3a/`; then run `python3 verify_task_3a_bag.py` and `python3 package_task_3a.py`. The packager only takes the bag from `bags/task_3a/`.
+* **What changed in the server for the faster run**: tilt limit $\pm 75 \to \pm 280$ PWM, braking-profile PID, thrust-driven altitude observer, strict hold timing with a $0.12\text{ s}$ margin, yaw channel left neutral with software drift compensation, motors armed at the first goal. Details in `technical_details.md` §10.5 and `troubleshoot.md` Issues 33–37.
 
 ---
 
@@ -169,9 +171,9 @@ git remote add upstream https://github.com/eYantra-Robotics-Competition/eYRC_26-
 | `src/troubleshoot.md` | Bug tracker, common pitfalls, and precautions |
 | `src/swift_pico/scripts/task1a.py` | Completed Task 1A perception script |
 | `src/swift_pico/src/waypoint_service.py` | Task 2C vision-based waypoint service (workspace copy) |
-| `src/task_2b/`, `src/task_2c/` | Task 2B (final) and Task 2C (pending bag) submission files |
-| `src/swift_pico/src/task_1b_controller/` | Task 1B flight controller package (PID / Waypoint navigation) |
-| `src/swift_pico/src/task_1c_controller/` | Task 1C advanced autonomy controller |
+| `src/task_2b/`, `src/task_2c/`, `src/task_3a/` | Task 2B, 2C and 3A submission files and bags |
+| `src/swift_pico/src/pico_controller_PID.py` | Position PID controller (Tasks 1B / 1C / 2A) |
+| `src/swift_pico/src/pico_server.py`, `pico_client.py`, `waypoint_service.py` | Task 3A workspace copies (identical to `task_3a/`) |
 | `src/swift_pico/launch/` | ROS 2 simulation launch files (e.g. `swift_pico_simulation.launch.py`) |
 | `src/rotors_simulator/` | Multi-rotor dynamics simulation models and Gazebo/MuJoCo plugins |
 | `src/controller_tuner/` | PID dynamic tuning tools and GUI utilities |
@@ -214,13 +216,14 @@ You are assisting our team with the e-Yantra Robotics Competition (eYRC 2026–2
 - e-Yantra Template Remote (upstream): https://github.com/eYantra-Robotics-Competition/eYRC_26-27_Khojo-Drone.git
 - Active Branch: kd_sim
 
-### 3. Current Progress (Stage 1 Completed: Tasks 1A, 1B, 1C; Stage 2: 2A scored 19/20, 2B done, 2C code ready)
+### 3. Current Progress (Stage 1: Tasks 1A, 1B, 1C done; Stage 2: 2A 19/20, 2B 40/40, 2C flown; Stage 3: 3A flown and packaged)
 - Task 1A (Survivor Detection & Localization): Fully implemented in src/swift_pico/scripts/KD_5844_task1a.py, packaged as KD_5844.zip. Scored 20/20.
-- Task 1B (Altitude Z-Axis PID Flight Control): Tuned via swift_pico/src/task_1b_controller and pid_values.yaml. Packaged in task_1b/KD_5844_task_1b.zip. Scored 40/40.
-- Task 1C (Multi-Axis Position Hold & Waypoint Tracking): Autonomous 3D trajectory tracking via swift_pico/src/task_1c_controller. Packaged in task_1c/KD_5844_task_1c.zip. Scored 40/40.
+- Task 1B (Altitude Z-Axis PID Flight Control): Tuned via swift_pico/src/pico_controller_PID.py and pid_values.yaml. Packaged in task_1b/KD_5844_task_1b.zip. Scored 40/40.
+- Task 1C (Multi-Axis Position Hold & Waypoint Tracking): Autonomous 3D trajectory tracking via swift_pico/src/pico_controller_PID.py. Packaged in task_1c/KD_5844_task_1c.zip. Scored 40/40.
 - Task 2A (3D position PID): Scored 19.00/20 (stabilized at 17.70 s, target 15 s). Faster gain set exists but is unverified.
 - Task 2B (waypoint service + action client/server): 40/40, 37.19 s.
-- Task 2C (vision-based waypoint service): code in task_2c/ and swift_pico/src/waypoint_service.py, tested offline only. Needs a sim run and bag before zipping.
+- Task 2C (vision-based waypoint service): flown on the simulator, 35.76 s, packaged in task_2c/.
+- Task 3A (full mission with obstacles, the Switch and landing): code in task_3a/ (copies in swift_pico/src/). Recorded run: T = 57.83 s armed-to-disarmed, 6/6 saves, self-computed 69.98/80. The simulator picks one of 4 arena layouts per launch; all four were test-flown. Check any new bag with verify_task_3a_bag.py before packaging.
 
 ### 4. Development Rules to Strictly Follow
 1. Always explain concepts from first principles (mathematical formulation, ROS 2 architecture, MuJoCo physics).

@@ -20,6 +20,7 @@ New in Task 3:
     legs — the planner's obstacle clearance assumes straight legs
 '''
 
+import os
 import time
 import math
 
@@ -40,14 +41,15 @@ from error_msg.msg import Error
 
 FLIGHT_Z = 13.0            # cruise / Visit altitude (whycode Z, measured down from the camera)
 SPHERE_RADIUS = 0.40       # official e-Yantra hold tolerance (radius <= 0.40 WhyCode units)
-VISIT_HOLD = 1.0           # seconds at Z = 13
-SAVE_HOLD = 2.0            # seconds at Z = 14
+HOLD_MARGIN = 0.12         # held this much longer than the rule asks, as a safety margin
+VISIT_HOLD = 1.0 + HOLD_MARGIN   # seconds at Z = 13
+SAVE_HOLD = 2.0 + HOLD_MARGIN    # seconds at Z = 14
 SAVE_Z_SPLIT = 13.5        # a hover goal below this altitude line (Z larger) is a Save
 MARKER_TIMEOUT = 0.5       # no whycode message for this long = marker lost, hold restarts
 HOME_RADIUS = 0.6          # a hover goal this close to the take-off point is the landing goal
 VIA_RADIUS = 0.35          # fly-past: done when this close, or once it has gone past
-VIA_LOOKAHEAD = 0.80       # aim beyond the via node so the drone corners at full cruise speed
-LAND_RATE = 2.8            # descent speed of the landing set-point, whycode units per second
+VIA_LOOKAHEAD = 1.20       # aim beyond the via node so the drone corners at full cruise speed
+LAND_RATE = 1.6            # descent speed of the landing set-point, whycode units per second
 LAND_TIMEOUT = 8.0
 
 
@@ -69,11 +71,14 @@ class WayPointServer(Node):
         # Mission state
         self.home = None            # [x, y, z] of the drone on the ground before take-off
         self.landed = False         # True after touchdown: motors off, controller silent
+        self.armed = False          # motors are armed when the first goal arrives (keeps the armed time short)
         self.goal_seq = 0           # increases with every accepted goal
         self.goal_lock = threading.Lock()
 
         # Yaw control state
         self.yaw = 0.0
+        self.yaw_rad = 0.0
+        self.yaw_rate = 0.0
         self.desired_yaw = -0.5
         self.prev_yaw_error = 0.0
         self.Kp_yaw = 2.0
@@ -89,11 +94,26 @@ class WayPointServer(Node):
         self.cmd.drone_index = 0
 
         self.pos_error = Error()
+        log_path = os.environ.get('KD_FLIGHT_LOG', '')      # optional per-tick CSV for tuning
+        self.flight_log = open(log_path, 'w') if log_path else None
 
         # Optimal Critically Damped Gains: [pitch(X), roll(Y), throttle(Z)]
-        self.Kp = [30.0, 30.0, 34.0]
-        self.Ki = [0.03, 0.03, 0.06]
-        self.Kd = [60.0, 60.0, 38.0]
+        self.Kp = [320.0, 320.0, 400.0]
+        self.Ki = [10.0, 10.0, 25.0]
+        self.Kd = [300.0, 300.0, 220.0]
+        # Braking profile: the P term never asks for more approach speed than the drone can
+        # brake from (square-root law), so long legs are fast and still stop without overshoot.
+        self.brake_acc = [2.3, 2.3, 2.6]      # usable deceleration per axis group, units / s^2
+        self.max_speed = [4.5, 4.5, 2.5]      # speed cap, units / s
+        self.d_alpha = [0.55, 0.55]           # derivative low-pass for X / Y
+        # Altitude estimate: whycode Z jumps by up to 0.3 between frames, so Z and its rate come
+        # from a small observer driven by the known thrust and corrected by the measurements.
+        self.z_est = 15.0
+        self.vz_est = 0.0
+        self.z_bias = 0.0
+        self.last_az = 0.0
+        self.z_meas_time = 0.0
+        self.hover_throttle = 1516
 
         # PID tracking state
         self.prev_error = [0.0, 0.0, 0.0]
@@ -102,10 +122,12 @@ class WayPointServer(Node):
         self.last_pid_time = time.time()
 
         # Controlled High-Speed Bank Angle Clamps (+/- 75 PWM) and Throttle Clamps
-        self.min_roll_pitch = 1425
-        self.max_roll_pitch = 1575
-        self.min_throttle = 1445
-        self.max_throttle = 1565
+        # Limits leave motor headroom: full throttle together with full tilt saturates the motors,
+        # the drone then loses yaw authority and spins (seen in testing).
+        self.min_roll_pitch = 1220
+        self.max_roll_pitch = 1780
+        self.min_throttle = 1350
+        self.max_throttle = 1640
 
         # Publishers
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
@@ -174,7 +196,15 @@ class WayPointServer(Node):
         self.curr_state[2] = float(pos.z)
         self.drone_position = self.curr_state[:]
 
-        self.yaw = math.degrees(msg.markers[0].rotation.z)
+        # The yaw hold (PD below) uses the raw whycode yaw. The axis rotation uses a smoothed copy:
+        # whycode yaw flickers by up to 0.5 rad near the arena corners, the real yaw moves slowly.
+        raw_yaw = float(msg.markers[0].rotation.z)
+        self.yaw = math.degrees(raw_yaw)
+        self.yaw_rad += self.yaw_rate                       # predict with the drift rate (rad / frame)
+        yaw_step = math.atan2(math.sin(raw_yaw - self.yaw_rad), math.cos(raw_yaw - self.yaw_rad))
+        yaw_step = max(-0.25, min(0.25, yaw_step))          # a flicker frame cannot pull it far
+        self.yaw_rad += 0.12 * yaw_step
+        self.yaw_rate = max(-0.06, min(0.06, self.yaw_rate + 0.01 * yaw_step))
         self.last_marker_time = now
 
         if not self.marker_received:
@@ -186,11 +216,10 @@ class WayPointServer(Node):
                 self.desired_state[1] - self.curr_state[1],
                 self.desired_state[2] - self.curr_state[2]
             ]
-            self.arm()
             self.get_logger().info(f'WhyCode Marker Detected at [{pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}]. Starting control loop.')
 
     def pid(self):
-        if not self.marker_received or self.landed:
+        if not self.marker_received or self.landed or not self.armed:
             return
 
         now = time.time()
@@ -199,86 +228,104 @@ class WayPointServer(Node):
             return
         self.last_pid_time = now
 
-        # 1. Position Errors (Target - Current)
-        error = [
-            self.desired_state[0] - self.curr_state[0],
-            self.desired_state[1] - self.curr_state[1],
-            self.desired_state[2] - self.curr_state[2]
-        ]
+        # 0. Altitude observer: predict with the thrust that was commanded, correct with whycode Z.
+        on_ground = self.home is not None and self.curr_state[2] > self.home[2] - 0.03 and self.last_az >= 0.0
+        if on_ground:
+            self.z_est, self.vz_est, self.z_bias = self.curr_state[2], 0.0, 0.0
+        else:
+            az = self.last_az + self.z_bias
+            self.z_est += self.vz_est * dt + 0.5 * az * dt * dt
+            self.vz_est += az * dt
+            if self.last_marker_time != self.z_meas_time:            # a new frame has arrived
+                self.z_meas_time = self.last_marker_time
+                r = max(-0.25, min(0.25, self.curr_state[2] - self.z_est))
+                self.z_est += 0.14 * r
+                self.vz_est += 0.31 * r
+                self.z_bias = max(-1.5, min(1.5, self.z_bias + 0.34 * r))
 
-        # 2. Precision Conditional Integral Accumulation
+        # 1. Position errors (target - current). Whycode's range noise scales X, Y and Z together
+        #    (the bearing to the marker is exact), so X / Y are re-scaled with the smooth altitude.
+        scale = self.z_est / self.curr_state[2] if self.curr_state[2] > 1.0 else 1.0
+        error = [
+            self.desired_state[0] - self.curr_state[0] * scale,
+            self.desired_state[1] - self.curr_state[1] * scale,
+            self.desired_state[2] - self.z_est
+        ]
+        self.d_error_filtered[2] = -self.vz_est
+
+        # 2. Integral only close to the target (removes the last centimetres, no wind-up in transit)
         for i in range(3):
-            limit = 0.45
-            max_sum = 25.0 if i == 2 else 15.0
-            if abs(error[i]) < limit:
-                self.sum_error[i] += error[i] * dt
-                self.sum_error[i] = max(-max_sum, min(max_sum, self.sum_error[i]))
+            if abs(error[i]) < 0.30:
+                self.sum_error[i] = max(-1.0, min(1.0, self.sum_error[i] + error[i] * dt))
             else:
                 self.sum_error[i] = 0.0
 
-        # 3. Filtered Derivative Calculation (low-pass filter against WhyCode noise)
-        for i in range(3):
+        # 3. Filtered derivative for X / Y (low-pass against whycode noise)
+        for i in range(2):
             raw_d = (error[i] - self.prev_error[i]) / dt
-            self.d_error_filtered[i] = (0.65 * raw_d) + (0.35 * self.d_error_filtered[i])
+            self.d_error_filtered[i] += self.d_alpha[i] * (raw_d - self.d_error_filtered[i])
 
-        # 4. PID Outputs
-        out_x = (self.Kp[0] * error[0]) + (self.Ki[0] * self.sum_error[0]) + (self.Kd[0] * self.d_error_filtered[0])
-        out_y = (self.Kp[1] * error[1]) + (self.Ki[1] * self.sum_error[1]) + (self.Kd[1] * self.d_error_filtered[1])
-        out_z = (self.Kp[2] * error[2]) + (self.Ki[2] * self.sum_error[2]) + (self.Kd[2] * self.d_error_filtered[2])
+        # 4. PID with a braking-profile P term. Horizontal: one profile along the line to the target.
+        dist = math.hypot(error[0], error[1])
+        kpd = self.Kp[0] / self.Kd[0]
+        speed = min(kpd * dist, math.sqrt(2.0 * self.brake_acc[0] * dist), self.max_speed[0])
+        ux, uy = (error[0] / dist, error[1] / dist) if dist > 1e-6 else (0.0, 0.0)
+        out_x = self.Kd[0] * (speed * ux + self.d_error_filtered[0]) + self.Ki[0] * self.sum_error[0]
+        out_y = self.Kd[1] * (speed * uy + self.d_error_filtered[1]) + self.Ki[1] * self.sum_error[1]
+        ez = abs(error[2])
+        vz = min(self.Kp[2] / self.Kd[2] * ez, math.sqrt(2.0 * self.brake_acc[2] * ez), self.max_speed[2])
+        out_z = self.Kd[2] * (math.copysign(vz, error[2]) + self.d_error_filtered[2]) + self.Ki[2] * self.sum_error[2]
 
-        # 4b. Limit pitch and roll TOGETHER: scale both by the same factor so the tilt keeps its
-        #     direction and the drone flies a straight line to the target. (Clamping each axis
-        #     on its own makes a 45-degree dash followed by a one-axis run — a dog-leg that can
-        #     clip an obstacle the planner had routed around.)
+        # 4b. Limit pitch and roll TOGETHER (same direction, scaled) so the drone flies straight legs.
         limit = float(self.max_roll_pitch - 1500)
         biggest = max(abs(out_x), abs(out_y))
         if biggest > limit:
             out_x *= limit / biggest
             out_y *= limit / biggest
 
-        # 5. Map to RC PWM Commands
+        # 4c. The marker yaw can drift in hard manoeuvres: turn the demand into the body axes.
+        cy, sy = math.cos(self.yaw_rad), math.sin(self.yaw_rad)
+        out_x, out_y = cy * out_x + sy * out_y, -sy * out_x + cy * out_y
+
+        # 5. Map to RC PWM. A tilted drone needs more thrust to keep the same lift.
         pitch_cmd = 1500 + int(out_x)
         roll_cmd = 1500 + int(out_y)
-        throttle_cmd = 1518 - int(out_z)
+        tilt = math.hypot(out_x, out_y) * 9.24e-4                    # rad, from the RC scale
+        tilt_boost = (1.0 / max(math.cos(tilt), 0.8) - 1.0) * 9.81 / 0.0201
+        throttle_cmd = self.hover_throttle - int(out_z) + int(tilt_boost)
 
-        # Zero-crossing anti-windup on Z
-        if error[2] * self.prev_error[2] < 0:
-            self.sum_error[2] = 0.0
-
-        # Floor cushion for Save (14.0): catch firmly if dipping below 14.25
-        if self.desired_state[2] <= 14.05 and self.curr_state[2] > 14.25 and throttle_cmd < 1525:
-            throttle_cmd = 1530
-
-        # Ground Liftoff Governor: prevents rocketing upward only while on the floor (Z > 14.85)
-        if self.curr_state[2] > 14.85 and throttle_cmd > 1542:
-            throttle_cmd = 1542
-
-        # Active Pitch-Up Decoupling: prevents climbing above 12.80 when braking
-        if self.curr_state[2] < 12.85 and throttle_cmd > 1512:
-            throttle_cmd = 1506
-
-        # Floor clearance guard
-        if self.curr_state[2] > 14.88:
+        # On the ground: no tilt until the drone has lifted clear of the floor
+        if self.home is not None and self.curr_state[2] > self.home[2] - 0.12:
             pitch_cmd = 1500
             roll_cmd = 1500
 
-        # 6. Yaw PD Controller to keep desired_yaw (-0.5 deg) steady
-        yaw_error = self.desired_yaw - self.yaw
-        yaw_error = (yaw_error + 180.0) % 360.0 - 180.0
-        yaw_d = (yaw_error - self.prev_yaw_error) / dt
-        self.prev_yaw_error = yaw_error
-        yaw_cmd = 1500 + int(self.Kp_yaw * yaw_error + self.Kd_yaw * yaw_d)
-        yaw_cmd = max(1460, min(1540, yaw_cmd))
+        # 6. Yaw: neutral. Chasing whycode's flickering yaw with the (rate-type) yaw channel spun the
+        #    drone during hard manoeuvres; left alone the yaw only drifts slowly, and step 4c already
+        #    compensates for that drift.
+        yaw_error = -self.yaw
+        yaw_cmd = 1500
+
+        # 7. Marker lost (out of view): level off and hover instead of flying on stale data.
+        if not self.marker_visible():
+            pitch_cmd, roll_cmd, throttle_cmd = 1500, 1500, self.hover_throttle
 
         # Clamping
         self.cmd.rc_pitch = max(self.min_roll_pitch, min(self.max_roll_pitch, pitch_cmd))
         self.cmd.rc_roll = max(self.min_roll_pitch, min(self.max_roll_pitch, roll_cmd))
         self.cmd.rc_throttle = max(self.min_throttle, min(self.max_throttle, throttle_cmd))
+        # Vertical acceleration this command produces (whycode Z grows downward) — for the observer
+        lift = (9.81 + 0.0201 * (self.cmd.rc_throttle - self.hover_throttle)) * max(math.cos(tilt), 0.8)
+        self.last_az = -1.02 * (lift - 9.81)
         self.cmd.rc_yaw = yaw_cmd
         self.cmd.rc_aux4 = 2000
 
         self.prev_error = [error[0], error[1], error[2]]
         self.command_pub.publish(self.cmd)
+        if self.flight_log is not None:
+            self.flight_log.write('%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%.3f\n' % (
+                now, self.curr_state[0], self.curr_state[1], self.curr_state[2], self.z_est, self.vz_est, self.z_bias,
+                self.desired_state[0], self.desired_state[1], self.desired_state[2],
+                self.cmd.rc_roll, self.cmd.rc_pitch, self.cmd.rc_throttle, self.yaw_rad))
 
         # Publish Error
         self.pos_error.pitch_error = float(error[0])
@@ -336,8 +383,9 @@ class WayPointServer(Node):
         while rclpy.ok() and not self.marker_received:
             time.sleep(0.02)
 
-        if self.landed:                       # a goal after landing: take off again
+        if self.landed or not self.armed:     # first goal (or a goal after landing): arm and take off
             self.landed = False
+            self.armed = True
             self.last_pid_time = time.time()
             self.prev_error = [0.0, 0.0, 0.0]
             self.arm()
@@ -367,7 +415,7 @@ class WayPointServer(Node):
         out_start = None
         held = 0.0
         while rclpy.ok():
-            time.sleep(0.02)
+            time.sleep(0.005)
 
             if my_seq != self.goal_seq:           # a newer goal has taken over
                 goal_handle.abort()
@@ -401,12 +449,9 @@ class WayPointServer(Node):
                     self.get_logger().info(f'{kind} complete: held {held:.2f} s.')
                     break
             elif hold_start is not None:
-                if out_start is None:
-                    out_start = now
-                elif now - out_start > 0.30:
-                    self.get_logger().warn(f'Left the sphere after {now - hold_start:.2f} s — hold restarts.')
-                    hold_start, held = None, 0.0
-                    out_start = None
+                # One frame outside the sphere restarts the hold: only an unbroken hold is counted.
+                self.get_logger().warn(f'Left the sphere after {now - hold_start:.2f} s — hold restarts.')
+                hold_start, held = None, 0.0
 
         if kind == 'Home' and rclpy.ok():
             self.land(goal_handle, feedback_msg, target)
@@ -428,10 +473,11 @@ class WayPointServer(Node):
             last = now
             self.desired_state = [target[0], target[1], z]
             self.publish_feedback(goal_handle, feedback_msg, 0.0)
-            if self.curr_state[2] >= ground_z - 0.15:               # touched down
+            if self.z_est >= ground_z - 0.05:                       # touched down (smooth altitude, not one noisy frame)
                 break
-        time.sleep(0.2)
         self.landed = True                    # pid() goes silent from here
+        if self.flight_log is not None:
+            self.flight_log.flush()
         for _ in range(5):
             self.disarm()
             time.sleep(0.05)

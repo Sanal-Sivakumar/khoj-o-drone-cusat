@@ -22,7 +22,7 @@ Disaster Zone ──► Drone / Sensors ──► Data Acquisition ──► Com
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ HOST MACHINE (Ubuntu 26.04 LTS)                                             │
+│ HOST MACHINE (Ubuntu)                                                       │
 │ • VS Code & Git Version Control                                             │
 │ • Workspace Directory: ~/pico_ws/src                                        │
 └──────────────────────────────────────┬──────────────────────────────────────┘
@@ -76,7 +76,8 @@ pico_ws/
     │   └── config/                   # Simulation parameters and bridge configs
     │
     ├── task_2b/                      # Task 2B submission files + bag
-    ├── task_2c/                      # Task 2C service, client, server (bag pending)
+    ├── task_2c/                      # Task 2C submission files + bag
+    ├── task_3a/                      # Task 3A submission files + bag
     ├── rotors_simulator/             # Multi-rotor simulation models & controllers
     ├── controller_tuner/             # Dynamic PID tuning utilities & GUIs
     ├── whycode-ros2/                 # Localization fiducial tracking system
@@ -153,7 +154,7 @@ Task 1B implements closed-loop vertical altitude stabilization in the MuJoCo phy
 ros2 launch swift_pico swift_pico_simulation.launch.py
 
 # Terminal 2: Flight Controller Node
-ros2 run swift_pico task_1b_controller
+ros2 run swift_pico pico_controller_PID.py
 
 # Terminal 3: Dynamic PID Tuning GUI (Optional / Tuning Mode)
 ros2 launch pid_tune pid_tune_drone.launch.py
@@ -175,7 +176,7 @@ Task 1C extends control to the horizontal Pitch ($X$) and Roll ($Y$) axes, enabl
 ros2 launch swift_pico swift_pico_simulation.launch.py
 
 # Terminal 2: Multi-Axis Flight Controller
-ros2 run swift_pico task_1c_controller
+ros2 run swift_pico pico_controller_PID.py
 ```
 
 * **Topics**: `/pitch_pid` ($X$-axis tilt), `/roll_pid` ($Y$-axis tilt), `/throttle_pid` ($Z$-axis lift).
@@ -269,13 +270,14 @@ python3 task_3a/KD_5844_pico_server.py
 * **Saving Maneuver**: 1.0s Visit at $Z = 13.0$, followed by 2.0s Save at $Z = 14.0$, inside a Euclidean sphere of radius $\le 0.40\text{ m}$.
 * **Obstacle Perception**: Strict RGB color neutrality filter (`brightest < 45 & diff < 10`) cleanly isolates the 3 physical black prism obstacles from green tree shadows with 100% precision.
 * **Obstacle Clearance & Routing**: Obstacles inflated with $R = 0.70$ safety clearance. Visibility graph with string pulling eliminates redundant waypoints for continuous velocity.
-* **The Switch**: Triggered upon completion of all 3 critical saves (at $t = 44.8\text{ s}$) or at $t = 55.0\text{ s}$ timer expiration. In-flight goal is canceled, holding position while `GetStableRoute` plans the stable route through the 3 stable survivors and home to `F6`.
-* **Home & Landing**: Returns to `F6`, hovers at $Z = 13.0$ for 1.0s, smoothly descends, and disarms on touchdown ($X=-0.06, Y=-0.19$).
+* **The Switch**: Triggered upon completion of all 3 critical saves (at $t = 25.9\text{ s}$ in the recorded run) or at $t = 55.0\text{ s}$ timer expiration. In-flight goal is canceled, holding position while `GetStableRoute` plans the stable route through the 3 stable survivors and home to `F6`.
+* **Home & Landing**: Returns to `F6`, hovers at $Z = 13.0$ for 1.0s, descends, and disarms on touchdown ($X=-0.18, Y=0.04$ in the recorded run; limit $\pm 0.4$).
+* **Random arena**: the simulator picks one of 4 arena layouts each launch (`arena_config` 0–3). The mission was test-flown on all four.
 * **Verified Benchmark**:
-  - Touchdown: **$T = 99.2\text{ s}$** (Total test time: **$100.28\text{ s}$**)
-  - Critical Phase: Completed by **$t = 44.78\text{ s}$** ($< 55.0\text{ s}$)
+  - Armed-to-disarmed time: **$T = 57.83\text{ s}$** (recorded on a random arena, config 1; test runs on all four arena configs: $54.8$–$60.1\text{ s}$)
+  - Critical Phase: Completed by **$t = 25.85\text{ s}$** ($< 55.0\text{ s}$)
   - Saves: **6 / 6 survivors saved**
-  - Score: **$62.81 / 80.0\text{ Marks}$** ($54.0 / 54.0$ base + $8.81$ speed bonus)
+  - Self-computed score (not a portal result): **$69.98 / 80.0$** ($54.0 / 54.0$ base + $15.98$ speed bonus). Checked from the bag with `verify_task_3a_bag.py`: every Visit, Save and the F6 hover is an unbroken in-sphere hold.
 * **Deliverables**: [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py), [`task_3a/KD_5844_pico_client.py`](../task_3a/KD_5844_pico_client.py), [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py), `task_3a_0.db3`, `metadata.yaml`, [`KD_5844_task_3a.zip`](../task_3a/KD_5844_task_3a.zip).
 
 ---
@@ -290,7 +292,7 @@ python3 task_3a/KD_5844_pico_server.py
 | **Task 2A** | 3D Position PID Stabilization | **19.00 / 20** | **10.00 s** / 10.00 s | **17.70 s** | < 15.0 s (Max Marks) | ⚠️ **PASSED, speed marks lost** |
 | **Task 2B** | Waypoint Service + Action Client/Server | **40 / 40** | 3.00 s per waypoint | **37.19 s** | 4 waypoints | ✅ **PASSED** |
 | **Task 2C** | Vision-Based Waypoint Service | **Benchmark Verified** | 3.00 s per waypoint | **35.76 s** | < 60.0 s (Full Marks) | ✅ **PASSED** |
-| **Task 3A** | Search, Rescue & Obstacle Avoidance | **62.81 / 80** | 6 Saves + Hover + Land | **100.28 s** | < 150.0 s (55s Crit) | ✅ **PASSED** |
+| **Task 3A** | Search, Rescue & Obstacle Avoidance | **69.98 / 80 (self-computed)** | 6 Saves + Hover + Land | **57.83 s** | < 150.0 s (55s Crit) | ✅ **PASSED** |
 
 ---
 
