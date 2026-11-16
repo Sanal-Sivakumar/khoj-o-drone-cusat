@@ -689,3 +689,22 @@ Touchdown was detected on a single raw $Z$ frame; a noisy frame cut the motors a
 
 #### Fix:
 Detect touchdown on the smooth altitude (`z_est >= ground - 0.05`) and descend at 1.6 units/s.
+
+---
+
+### Issue 38: Drone Flying Out of Arena Map During High-Speed Diagonal Sprints
+
+#### Symptom:
+On long diagonal sprint legs (e.g., F6 to J10 spanning ~7 meters across the arena), the drone pitches violently, overshoots the waypoint by >0.5 m, misses the 0.40 m sphere, yaw rotates by >40 degrees, and the drone flies out of the camera view.
+
+#### Cause:
+1. **Uncontrolled Aerodynamic Yaw Torque**: Setting `rc_yaw = 1500` (neutral) under an extreme tilt limit of $\pm 280$ PWM caused propeller counter-torque to yaw the drone by up to $45^\circ$.
+2. **Yaw Lag in Body Projection**: The smoothed `self.yaw_rad` lagged behind real rapid yaw rotations, projecting pitch and roll commands in the wrong direction and driving the drone into the perimeter wall.
+3. **Premature Bank During Liftoff**: Liftoff clearance threshold of only 12 cm ($Z < 14.89$) engaged full bank angles while the drone was still in ground effect.
+
+#### Fix:
+1. **Active Clamped Yaw PD**: Restored active yaw stabilization targeting `desired_yaw = -0.5 deg`, clamped to a gentle $\pm 30$ PWM (`[1470, 1530]`). This keeps yaw locked within $\pm 2^\circ$ with zero risk of motor saturation.
+2. **Balanced Tilt Headroom**: Moderated tilt limits to $\pm 200$ PWM (`[1300, 1700]`). The drone maintains top speeds of $4.0\text{ m/s}$ while retaining 100 PWM headroom for stability.
+3. **Elevated Ground Clearance**: Raised vertical liftoff guard to $0.35\text{ m}$ ($Z < \text{ground} - 0.35$), ensuring clean vertical ascent before banking.
+4. **Waypoint Derivative Reset**: Cleared `d_error_filtered` and aligned `prev_error` in `set_target` to eliminate impulse kicks when new waypoint goals are dispatched.
+

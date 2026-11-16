@@ -121,11 +121,11 @@ class WayPointServer(Node):
         self.d_error_filtered = [0.0, 0.0, 0.0]
         self.last_pid_time = time.time()
 
-        # Controlled High-Speed Bank Angle Clamps (+/- 75 PWM) and Throttle Clamps
+        # Controlled High-Speed Bank Angle Clamps (+/- 200 PWM) and Throttle Clamps
         # Limits leave motor headroom: full throttle together with full tilt saturates the motors,
         # the drone then loses yaw authority and spins (seen in testing).
-        self.min_roll_pitch = 1220
-        self.max_roll_pitch = 1780
+        self.min_roll_pitch = 1300
+        self.max_roll_pitch = 1700
         self.min_throttle = 1350
         self.max_throttle = 1640
 
@@ -295,15 +295,17 @@ class WayPointServer(Node):
         throttle_cmd = self.hover_throttle - int(out_z) + int(tilt_boost)
 
         # On the ground: no tilt until the drone has lifted clear of the floor
-        if self.home is not None and self.curr_state[2] > self.home[2] - 0.12:
+        if self.home is not None and self.curr_state[2] > self.home[2] - 0.35:
             pitch_cmd = 1500
             roll_cmd = 1500
 
-        # 6. Yaw: neutral. Chasing whycode's flickering yaw with the (rate-type) yaw channel spun the
-        #    drone during hard manoeuvres; left alone the yaw only drifts slowly, and step 4c already
-        #    compensates for that drift.
-        yaw_error = -self.yaw
-        yaw_cmd = 1500
+        # 6. Yaw PD Controller to keep desired_yaw (-0.5 deg) steady without motor saturation
+        yaw_error = self.desired_yaw - self.yaw
+        yaw_error = (yaw_error + 180.0) % 360.0 - 180.0
+        yaw_d = (yaw_error - self.prev_yaw_error) / dt
+        self.prev_yaw_error = yaw_error
+        # Gentle yaw correction (clamped to +/- 30 PWM) to eliminate drift while leaving full motor headroom
+        yaw_cmd = 1500 + int(max(-30.0, min(30.0, self.Kp_yaw * yaw_error + self.Kd_yaw * yaw_d)))
 
         # 7. Marker lost (out of view): level off and hover instead of flying on stale data.
         if not self.marker_visible():
@@ -345,6 +347,14 @@ class WayPointServer(Node):
     def set_target(self, target):
         self.desired_state = [float(target[0]), float(target[1]), float(target[2])]
         self.sum_error = [0.0, 0.0, 0.0]
+        # Reset derivative tracking across waypoint jumps to avoid impulse kicks
+        scale = self.z_est / self.curr_state[2] if self.curr_state[2] > 1.0 else 1.0
+        self.prev_error = [
+            self.desired_state[0] - self.curr_state[0] * scale,
+            self.desired_state[1] - self.curr_state[1] * scale,
+            self.desired_state[2] - self.z_est
+        ]
+        self.d_error_filtered = [0.0, 0.0, 0.0]
 
     def is_home(self, target):
         return (self.home is not None and
