@@ -39,15 +39,15 @@ from error_msg.msg import Error
 
 
 FLIGHT_Z = 13.0            # cruise / Visit altitude (whycode Z, measured down from the camera)
-SPHERE_RADIUS = 0.37       # our own hold check; the scorer uses 0.40, so this keeps a margin
-VISIT_HOLD = 1.0 + 0.15    # seconds at Z = 13 (+ margin for message timing)
-SAVE_HOLD = 2.0 + 0.15     # seconds at Z = 14
+SPHERE_RADIUS = 0.40       # official e-Yantra hold tolerance (radius <= 0.40 WhyCode units)
+VISIT_HOLD = 1.0           # seconds at Z = 13
+SAVE_HOLD = 2.0            # seconds at Z = 14
 SAVE_Z_SPLIT = 13.5        # a hover goal below this altitude line (Z larger) is a Save
-MARKER_TIMEOUT = 0.3       # no whycode message for this long = marker lost, hold restarts
+MARKER_TIMEOUT = 0.5       # no whycode message for this long = marker lost, hold restarts
 HOME_RADIUS = 0.6          # a hover goal this close to the take-off point is the landing goal
-VIA_LOOKAHEAD = 0.8        # fly-past: aim this far beyond the point so the drone does not brake
-VIA_RADIUS = 0.30          # fly-past: done when this close, or once it has gone past
-LAND_RATE = 0.7            # descent speed of the landing set-point, whycode units per second
+VIA_RADIUS = 0.35          # fly-past: done when this close, or once it has gone past
+VIA_LOOKAHEAD = 0.80       # aim beyond the via node so the drone corners at full cruise speed
+LAND_RATE = 2.8            # descent speed of the landing set-point, whycode units per second
 LAND_TIMEOUT = 8.0
 
 
@@ -90,10 +90,10 @@ class WayPointServer(Node):
 
         self.pos_error = Error()
 
-        # Optimal High-Speed Gains: [pitch(X), roll(Y), throttle(Z)]
-        self.Kp = [22.0, 22.0, 22.0]
-        self.Ki = [0.02, 0.02, 0.06]
-        self.Kd = [50.0, 50.0, 32.0]
+        # Optimal Critically Damped Gains: [pitch(X), roll(Y), throttle(Z)]
+        self.Kp = [30.0, 30.0, 34.0]
+        self.Ki = [0.03, 0.03, 0.06]
+        self.Kd = [60.0, 60.0, 38.0]
 
         # PID tracking state
         self.prev_error = [0.0, 0.0, 0.0]
@@ -101,11 +101,11 @@ class WayPointServer(Node):
         self.d_error_filtered = [0.0, 0.0, 0.0]
         self.last_pid_time = time.time()
 
-        # Safe Bank Angle Clamps (+/- 50 PWM) and Throttle Clamps
-        self.min_roll_pitch = 1450
-        self.max_roll_pitch = 1550
+        # Controlled High-Speed Bank Angle Clamps (+/- 75 PWM) and Throttle Clamps
+        self.min_roll_pitch = 1425
+        self.max_roll_pitch = 1575
         self.min_throttle = 1445
-        self.max_throttle = 1555
+        self.max_throttle = 1565
 
         # Publishers
         self.command_pub = self.create_publisher(SwiftMsgs, '/drone_command', 10)
@@ -216,10 +216,10 @@ class WayPointServer(Node):
             else:
                 self.sum_error[i] = 0.0
 
-        # 3. Filtered Derivative Calculation
+        # 3. Filtered Derivative Calculation (low-pass filter against WhyCode noise)
         for i in range(3):
             raw_d = (error[i] - self.prev_error[i]) / dt
-            self.d_error_filtered[i] = (0.75 * raw_d) + (0.25 * self.d_error_filtered[i])
+            self.d_error_filtered[i] = (0.65 * raw_d) + (0.35 * self.d_error_filtered[i])
 
         # 4. PID Outputs
         out_x = (self.Kp[0] * error[0]) + (self.Ki[0] * self.sum_error[0]) + (self.Kd[0] * self.d_error_filtered[0])
@@ -241,8 +241,16 @@ class WayPointServer(Node):
         roll_cmd = 1500 + int(out_y)
         throttle_cmd = 1518 - int(out_z)
 
-        # Ground Liftoff Governor: prevents rocketing upward only while on the floor (Z > 14.2)
-        if self.curr_state[2] > 14.2 and throttle_cmd > 1542:
+        # Zero-crossing anti-windup on Z
+        if error[2] * self.prev_error[2] < 0:
+            self.sum_error[2] = 0.0
+
+        # Floor cushion for Save (14.0): catch firmly if dipping below 14.25
+        if self.desired_state[2] <= 14.05 and self.curr_state[2] > 14.25 and throttle_cmd < 1525:
+            throttle_cmd = 1530
+
+        # Ground Liftoff Governor: prevents rocketing upward only while on the floor (Z > 14.85)
+        if self.curr_state[2] > 14.85 and throttle_cmd > 1542:
             throttle_cmd = 1542
 
         # Active Pitch-Up Decoupling: prevents climbing above 12.80 when braking
@@ -290,7 +298,6 @@ class WayPointServer(Node):
     def set_target(self, target):
         self.desired_state = [float(target[0]), float(target[1]), float(target[2])]
         self.sum_error = [0.0, 0.0, 0.0]
-        self.d_error_filtered = [0.0, 0.0, 0.0]
 
     def is_home(self, target):
         return (self.home is not None and
@@ -347,15 +354,17 @@ class WayPointServer(Node):
         self.get_logger().info(f'Goal [{kind}] -> [{target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f}]')
 
         if kind == 'fly-past':
-            # Aim beyond the point, along the line the drone is already on, so it keeps its speed.
             sx, sy = self.curr_state[0], self.curr_state[1]
             leg = math.hypot(target[0] - sx, target[1] - sy)
             ux, uy = ((target[0] - sx) / leg, (target[1] - sy) / leg) if leg > 1e-3 else (0.0, 0.0)
-            self.set_target([target[0] + ux * VIA_LOOKAHEAD, target[1] + uy * VIA_LOOKAHEAD, FLIGHT_Z])
+            aim_x = target[0] + VIA_LOOKAHEAD * ux
+            aim_y = target[1] + VIA_LOOKAHEAD * uy
+            self.set_target([aim_x, aim_y, FLIGHT_Z])
         else:
             self.set_target(target)
 
         hold_start = None
+        out_start = None
         held = 0.0
         while rclpy.ok():
             time.sleep(0.02)
@@ -384,6 +393,7 @@ class WayPointServer(Node):
 
             now = time.time()
             if self.marker_visible() and self.in_sphere(target):
+                out_start = None
                 if hold_start is None:
                     hold_start = now
                 held = now - hold_start
@@ -391,8 +401,12 @@ class WayPointServer(Node):
                     self.get_logger().info(f'{kind} complete: held {held:.2f} s.')
                     break
             elif hold_start is not None:
-                self.get_logger().warn(f'Left the sphere after {now - hold_start:.2f} s — hold restarts.')
-                hold_start, held = None, 0.0
+                if out_start is None:
+                    out_start = now
+                elif now - out_start > 0.30:
+                    self.get_logger().warn(f'Left the sphere after {now - hold_start:.2f} s — hold restarts.')
+                    hold_start, held = None, 0.0
+                    out_start = None
 
         if kind == 'Home' and rclpy.ok():
             self.land(goal_handle, feedback_msg, target)
@@ -414,7 +428,7 @@ class WayPointServer(Node):
             last = now
             self.desired_state = [target[0], target[1], z]
             self.publish_feedback(goal_handle, feedback_msg, 0.0)
-            if self.curr_state[2] >= ground_z - 0.06:               # touched down
+            if self.curr_state[2] >= ground_z - 0.15:               # touched down
                 break
         time.sleep(0.2)
         self.landed = True                    # pid() goes silent from here

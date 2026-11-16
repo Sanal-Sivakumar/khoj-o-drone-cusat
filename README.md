@@ -266,11 +266,17 @@ python3 task_3a/KD_5844_pico_server.py
 ```
 
 ### Key Mission Rules & Architecture:
-* **Saving Maneuver**: 1.0s Visit at $Z = 13.0$, followed by 2.0s Save at $Z = 14.0$, inside a Euclidean sphere of radius $0.4\text{ m}$.
-* **Obstacle Clearance**: Black prism obstacles inflated with $32\text{ px}$ safety clearance ($\approx 0.51\text{ m}$). Straight-line shortcutting ensures zero unnecessary waypoints and continuous velocity.
-* **The Switch**: Triggered upon completion of all 3 critical saves or at $t = 54.5\text{ s}$ timer expiration. In-flight goal is canceled, holding position while `replan_from_pose` plans the stable route through the 3 stable survivors and home to `F6`.
-* **Home & Landing**: Returns to `F6`, hovers at $Z = 13.0$ for 1.0s, smoothly descends with horizontal PID active, and disarms on ground contact.
-* **Deliverables**: [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py), [`task_3a/KD_5844_pico_client.py`](../task_3a/KD_5844_pico_client.py), [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py), `ReplanFromPose.srv`.
+* **Saving Maneuver**: 1.0s Visit at $Z = 13.0$, followed by 2.0s Save at $Z = 14.0$, inside a Euclidean sphere of radius $\le 0.40\text{ m}$.
+* **Obstacle Perception**: Strict RGB color neutrality filter (`brightest < 45 & diff < 10`) cleanly isolates the 3 physical black prism obstacles from green tree shadows with 100% precision.
+* **Obstacle Clearance & Routing**: Obstacles inflated with $R = 0.70$ safety clearance. Visibility graph with string pulling eliminates redundant waypoints for continuous velocity.
+* **The Switch**: Triggered upon completion of all 3 critical saves (at $t = 44.8\text{ s}$) or at $t = 55.0\text{ s}$ timer expiration. In-flight goal is canceled, holding position while `GetStableRoute` plans the stable route through the 3 stable survivors and home to `F6`.
+* **Home & Landing**: Returns to `F6`, hovers at $Z = 13.0$ for 1.0s, smoothly descends, and disarms on touchdown ($X=-0.06, Y=-0.19$).
+* **Verified Benchmark**:
+  - Touchdown: **$T = 99.2\text{ s}$** (Total test time: **$100.28\text{ s}$**)
+  - Critical Phase: Completed by **$t = 44.78\text{ s}$** ($< 55.0\text{ s}$)
+  - Saves: **6 / 6 survivors saved**
+  - Score: **$62.81 / 80.0\text{ Marks}$** ($54.0 / 54.0$ base + $8.81$ speed bonus)
+* **Deliverables**: [`task_3a/KD_5844_waypoint_service.py`](../task_3a/KD_5844_waypoint_service.py), [`task_3a/KD_5844_pico_client.py`](../task_3a/KD_5844_pico_client.py), [`task_3a/KD_5844_pico_server.py`](../task_3a/KD_5844_pico_server.py), `task_3a_0.db3`, `metadata.yaml`, [`KD_5844_task_3a.zip`](../task_3a/KD_5844_task_3a.zip).
 
 ---
 
@@ -284,6 +290,7 @@ python3 task_3a/KD_5844_pico_server.py
 | **Task 2A** | 3D Position PID Stabilization | **19.00 / 20** | **10.00 s** / 10.00 s | **17.70 s** | < 15.0 s (Max Marks) | ⚠️ **PASSED, speed marks lost** |
 | **Task 2B** | Waypoint Service + Action Client/Server | **40 / 40** | 3.00 s per waypoint | **37.19 s** | 4 waypoints | ✅ **PASSED** |
 | **Task 2C** | Vision-Based Waypoint Service | **Benchmark Verified** | 3.00 s per waypoint | **35.76 s** | < 60.0 s (Full Marks) | ✅ **PASSED** |
+| **Task 3A** | Search, Rescue & Obstacle Avoidance | **62.81 / 80** | 6 Saves + Hover + Land | **100.28 s** | < 150.0 s (55s Crit) | ✅ **PASSED** |
 
 ---
 

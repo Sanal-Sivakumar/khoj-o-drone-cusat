@@ -286,15 +286,16 @@ def find_obstacle_mask(canvas, coord):
     Rejected: small dark specks (tree shadows), and anything sitting on F6 — that is the
     drone itself (dark body + whycode ring) waiting to take off.
     '''
-    # Black = every channel low AND no colour cast (dark tree shadows are green, not black).
+    # Black = every channel low AND no colour cast (dark tree shadows are green, not neutral black).
     px = canvas.astype(np.int16)
     brightest, dullest = px.max(axis=2), px.min(axis=2)
-    dark = ((brightest < 55) & (brightest - dullest < 25)).astype(np.uint8) * 255
-    dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)))
-    dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
+    diff = brightest - dullest
+    dark = ((brightest < 45) & (diff < 10)).astype(np.uint8) * 255
+    dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11)))
+    dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11)))
     contours, _ = cv2.findContours(dark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    min_area = 0.20 * coord.cell_size ** 2            # a fifth of a grid cell
+    min_area = 1.0 * coord.cell_size ** 2            # obstacles cover >1.0 grid cell
     fx, fy = coord.name_to_px[START_NAME]
     mask = np.zeros(canvas.shape[:2], dtype=np.uint8)
     for c in contours:
@@ -302,7 +303,7 @@ def find_obstacle_mask(canvas, coord):
         if area < min_area:
             continue
         hull_area = cv2.contourArea(cv2.convexHull(c))
-        if hull_area <= 0 or area / hull_area < 0.75:  # obstacles are solid shapes
+        if hull_area <= 0 or area / hull_area < 0.70:  # solid obstacle shapes
             continue
         cx, cy = contour_centroid(c)
         if math.hypot(cx - fx, cy - fy) < 0.7 * coord.cell_size:
@@ -438,7 +439,23 @@ class ObstaclePlanner:
         while u >= 0:
             chain.append(self.nodes[u])
             u = prev[u]
-        return best, chain[::-1]
+        raw_vias = chain[::-1]
+
+        # String pulling (line-of-sight shortcutting): remove redundant intermediate vertices
+        path = [a_px] + raw_vias + [b_px]
+        shortcut = [path[0]]
+        curr = 0
+        while curr < len(path) - 1:
+            next_idx = curr + 1
+            for j in range(len(path) - 1, curr, -1):
+                if self.segment_free(shortcut[-1], path[j]):
+                    next_idx = j
+                    break
+            shortcut.append(path[next_idx])
+            curr = next_idx
+        vias = shortcut[1:-1]
+        cost = sum(leg_cost(self.coord.px_to_whycode(shortcut[k]), self.coord.px_to_whycode(shortcut[k+1])) + VIA_PENALTY for k in range(len(shortcut)-1))
+        return cost, vias
 
 
 class MissionPlanner:

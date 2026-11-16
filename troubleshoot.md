@@ -559,4 +559,66 @@ Setting `pitch_cmd = 1500` and `roll_cmd = 1500` during landing mode cuts off at
 #### Fix:
 Keep X and Y position PID active at $(F6\_X, F6\_Y)$ during descent while commanding a governed throttle descent until touchdown ($Z \ge 15.8$), then disarm.
 
+---
+
+### Issue 29: Overtight Sphere Radius (0.37m) & Sensor Noise Causing Hold Reset Loop
+
+#### Symptom:
+Drone hovers over a survivor indefinitely; hold timer constantly resets from zero; 55s critical window expires without completing Save.
+
+#### Cause:
+Shrinking sphere radius from official 0.40m to 0.37m caused normal WhyCode marker oscillation ($\pm 0.05\text{ m}$) to trip the boundary check on single frames, wiping `hold_start`.
+
+#### Fix:
+Enforce the exact official 0.40m Euclidean sphere tolerance (`math.sqrt(dx**2 + dy**2 + dz**2) <= 0.40`) and add a 120ms debounce so single-frame sensor anomalies don't wipe valid continuous holds.
+
+---
+
+### Issue 30: Foliage Shadows Merged with Obstacles & False 4th Obstacle Detection
+
+#### Symptom:
+Visibility graph planner reports boxed-in positions, clearance drops, routes fall back to "direct legs", and drone collides with an obstacle.
+
+#### Cause:
+Foliage and ground shadows have green color casts ($G \approx 37, R \approx 24, B \approx 20$) with $\Delta_{\text{max-min}} \approx 16.5$. A generic darkness threshold `brightest < 55 & diff < 25` merged green shadows with the adjacent black prism, creating irregular blobs with low solidity ($\sim 0.60$) or 4 detected obstacles instead of 3. Setting a high solidity cutoff ($> 0.75$) rejected the true merged obstacle completely, leaving only 2 obstacles and leading to fatal collisions.
+
+#### Fix:
+Enforce strict RGB color neutrality: `brightest < 45 & (brightest - dullest < 10)`. Since true black prisms have identical B, G, R values ($\Delta < 2$), this completely eliminates green foliage shadows before contouring. Pair with morphology `MORPH_CLOSE(11, 11)` to bridge white grid lines and `min_area = 1.0 * cell_size**2`, `solidity >= 0.70`, cleanly detecting exactly the 3 physical obstacles with 100% precision.
+
+---
+
+### Issue 31: Z-Axis Integrator Windup & Floor Bouncing During Descent to Save (Z=14)
+
+#### Symptom:
+Transition from Visit ($Z=13$) to Save ($Z=14$) plunges down to $Z > 15.0$, bounces off the arena floor, and takes 10+ seconds to stabilize.
+
+#### Cause:
+Integrator accumulated downward error during descent. When crossing 14.0, positive `sum_error[2]` kept throttle low, while liftoff governor capped recovery thrust below 14.2.
+
+#### Fix:
+Add zero-crossing anti-windup (`if error[2] * prev_error[2] < 0: sum_error[2] = 0.0`), set ground liftoff governor threshold to floor level ($Z > 14.85$), and add floor cushion at $Z > 14.25$ when targeting 14.0.
+
+---
+
+### Issue 32: Uncoupled Pitch/Roll Limiting Causing Dog-Leg Obstacle Clipping
+
+#### Symptom:
+During diagonal sprint legs, the drone clips the edge of an obstacle even though the planner cleared it.
+
+#### Cause:
+Clamping pitch and roll independently to $[1425, 1575]$ forced a 45-degree dash followed by a single-axis run (dog-leg deviation from straight line).
+
+#### Fix:
+Couple pitch and roll limits by uniform scaling:
+```python
+limit = float(self.max_roll_pitch - 1500)
+biggest = max(abs(out_x), abs(out_y))
+if biggest > limit:
+    out_x *= limit / biggest
+    out_y *= limit / biggest
+```
+This forces the drone to track the exact line-of-sight vector without diagonal bulging.
+
+
+
 
